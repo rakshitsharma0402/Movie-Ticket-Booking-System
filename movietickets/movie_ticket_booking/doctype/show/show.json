@@ -105,8 +105,7 @@
   {
    "fieldname": "ticket_price",
    "fieldtype": "Currency",
-   "label": "Ticket Price",
-   "reqd": 1
+   "label": "Ticket Price"
   },
   {
    "default": "SHW-.YYYY.-.#####",
@@ -119,7 +118,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-17 12:10:45.805900",
+ "modified": "2026-08-17 12:27:00.253093",
  "modified_by": "Administrator",
  "module": "Movie Ticket Booking",
  "name": "Show",
