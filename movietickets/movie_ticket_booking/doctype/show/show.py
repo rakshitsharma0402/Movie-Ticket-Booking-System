@@ -40,16 +40,23 @@ class Show(Document):
 		self.set_initial_seat_counts()
 
 	def set_ticket_price_default(self):
-		"""ticket_price defaults from the Screen's base_price, but only
-		on a new, still-empty record — never overwrites a value the user
-		already set or a value carried over from a prior save. This is
-		deliberately NOT fetch_from, which would clobber overrides every
-		time the screen link is touched."""
-		if self.is_new() and not self.ticket_price and self.screen:
+		"""ticket_price defaults from the Screen's base_price when empty.
+		Not client-side Mandatory, since Frappe enforces Mandatory fields
+		before validate() ever runs on the server — that would block this
+		default from ever executing. Enforced here instead, after the
+		default has had a chance to apply."""
+		if not self.ticket_price and self.screen:
 			base_price = frappe.db.get_value("Screen", self.screen, "base_price")
 			if base_price:
 				self.ticket_price = base_price
 
+		if not self.ticket_price:
+			frappe.throw(
+				"Ticket Price is required and could not be defaulted from the "
+				"Screen's base price. Please enter it manually.",
+				title="Ticket Price Required",
+			)
+			
 	def compute_end_time(self):
 		"""end_time = start_time + movie.duration_minutes.
 		Recomputed whenever movie or start_time is set/changed, since both
