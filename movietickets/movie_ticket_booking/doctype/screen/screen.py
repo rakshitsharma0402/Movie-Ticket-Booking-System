@@ -62,7 +62,7 @@ class Screen(Document):
 	def on_update(self):
 		self.sync_theater_screen_count()
 
-	def on_trash(self):
+	def after_delete(self):
 		self.sync_theater_screen_count()
 
 	def sync_theater_screen_count(self):
