@@ -123,7 +123,9 @@ class TicketBooking(Document):
 		"""seat_label must match '{ROW_LETTER}-{SEAT_NUMBER}' (e.g. 'A-12'),
 		agree with the row's own row_letter/seat_number fields, and fall
 		within the Screen's seat_rows/seats_per_row bounds. Row letters are
-		derived A, B, C... up to seat_rows (row 1 = A, row 2 = B, etc.)."""
+		derived A, B, C... up to seat_rows (row 1 = A, row 2 = B, etc.) —
+		same scheme as api.get_seat_availability (MTBX-8.1), guarded the
+		same way against >26-row screens."""
 		if not self.seats or not self.screen:
 			return
 
@@ -132,6 +134,12 @@ class TicketBooking(Document):
 		)
 		if not seat_rows or not seats_per_row:
 			return
+
+		if seat_rows > 26:
+			frappe.throw(
+				f"Screen has {seat_rows} rows — seat labeling only supports up to 26 (A-Z).",
+				title="Unsupported Screen Configuration",
+			)
 
 		valid_row_letters = {chr(ord("A") + i) for i in range(seat_rows)}
 
