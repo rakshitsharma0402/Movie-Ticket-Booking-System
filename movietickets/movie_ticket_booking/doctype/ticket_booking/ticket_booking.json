@@ -105,7 +105,7 @@
    "reqd": 1
   },
   {
-   "default": "user",
+   "default": "__user",
    "fieldname": "booked_by",
    "fieldtype": "Link",
    "label": "Booked By",
@@ -189,7 +189,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-08-17 13:18:40.861391",
+ "modified": "2026-08-17 13:33:42.923278",
  "modified_by": "Administrator",
  "module": "Movie Ticket Booking",
  "name": "Ticket Booking",
