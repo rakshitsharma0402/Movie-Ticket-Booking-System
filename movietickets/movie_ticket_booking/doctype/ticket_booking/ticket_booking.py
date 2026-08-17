@@ -7,15 +7,7 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import get_datetime, now_datetime
 
-REFUND_FULL_HOURS = 4
-REFUND_PARTIAL_HOURS = 2
-REFUND_FULL_PCT = 100
-REFUND_PARTIAL_PCT = 50
-REFUND_NONE_PCT = 0
-MAX_SEATS_PER_BOOKING = 10
-
 SEAT_LABEL_PATTERN = re.compile(r"^([A-Z])-(\d+)$")
-
 
 class TicketBooking(Document):
 	# begin: auto-generated types
@@ -181,9 +173,10 @@ class TicketBooking(Document):
 		self.total_amount = (self.number_of_seats or 0) * (self.price_per_seat or 0)
 
 	def validate_seat_count_range(self):
-		if not (1 <= self.number_of_seats <= MAX_SEATS_PER_BOOKING):
+		max_seats = frappe.get_cached_doc("Booking Configuration").max_seats_per_booking
+		if not (1 <= self.number_of_seats <= max_seats):
 			frappe.throw(
-				f"A booking must contain between 1 and {MAX_SEATS_PER_BOOKING} seats "
+				f"A booking must contain between 1 and {max_seats} seats "
 				f"(got {self.number_of_seats}).",
 				title="Invalid Seat Count",
 			)
@@ -203,25 +196,22 @@ class TicketBooking(Document):
 	def calculate_refund(self):
 		"""CUSTOMER-INITIATED cancellation path (fires via formal .cancel(),
 		i.e. docstatus 1->2). Applies a TIERED refund based on hours
-		between now and the show's start — the customer chose when to
-		cancel, so the penalty schedule applies:
-		  > REFUND_FULL_HOURS      -> REFUND_FULL_PCT
-		  REFUND_PARTIAL_HOURS–REFUND_FULL_HOURS -> REFUND_PARTIAL_PCT
-		  < REFUND_PARTIAL_HOURS   -> REFUND_NONE_PCT
-		This is distinct from Show.cascade_cancellation_if_cancelled()
-		(MTBX-4.1), which handles organization-initiated show cancellations
-		with a flat 100% refund instead. Thresholds are hardcoded
-		placeholders pending MTBX-5 — see TODO at top of file."""
-		
+		between now and the show's start, using thresholds from Booking
+		Configuration (MTBX-5) — not hardcoded. Distinct from
+		Show.cascade_cancellation_if_cancelled() (MTBX-4.1), which handles
+		organization-initiated show cancellations with a flat 100% refund
+		instead."""
+		config = frappe.get_cached_doc("Booking Configuration")
+
 		show_datetime = get_datetime(f"{self.show_date} {self.start_time}")
 		hours_before_show = (show_datetime - now_datetime()).total_seconds() / 3600
 
-		if hours_before_show > REFUND_FULL_HOURS:
-			refund_pct = REFUND_FULL_PCT
-		elif hours_before_show >= REFUND_PARTIAL_HOURS:
-			refund_pct = REFUND_PARTIAL_PCT
+		if hours_before_show > config.full_refund_hours:
+			refund_pct = 100
+		elif hours_before_show >= config.partial_refund_hours:
+			refund_pct = config.partial_refund_pct
 		else:
-			refund_pct = REFUND_NONE_PCT
+			refund_pct = 0
 
 		refund_amount = (self.total_amount or 0) * refund_pct / 100
 
