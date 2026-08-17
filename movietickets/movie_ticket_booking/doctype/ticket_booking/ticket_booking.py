@@ -1,8 +1,20 @@
 # Copyright (c) 2026, Rakshit Sharma and contributors
 # For license information, please see license.txt
 
+import re
+
 import frappe
 from frappe.model.document import Document
+from frappe.utils import get_datetime, now_datetime
+
+REFUND_FULL_HOURS = 4
+REFUND_PARTIAL_HOURS = 2
+REFUND_FULL_PCT = 100
+REFUND_PARTIAL_PCT = 50
+REFUND_NONE_PCT = 0
+MAX_SEATS_PER_BOOKING = 10
+
+SEAT_LABEL_PATTERN = re.compile(r"^([A-Z])-(\d+)$")
 
 
 class TicketBooking(Document):
@@ -40,3 +52,182 @@ class TicketBooking(Document):
 	# end: auto-generated types
 
 	_DOCTYPE_NAME = "Ticket Booking"
+
+	def validate(self):
+		self.validate_show_status()
+		self.validate_no_duplicate_seats_in_booking()
+		self.validate_seats_not_already_booked()
+		self.validate_seat_label_format_and_bounds()
+		self.calculate_totals()
+		self.validate_seat_count_range()
+
+	def on_submit(self):
+		self.booking_status = "Confirmed"
+		self.payment_status = "Paid"
+		self.db_set("booking_status", "Confirmed", update_modified=False)
+		self.db_set("payment_status", "Paid", update_modified=False)
+		self.adjust_show_seat_counts(seats_delta=self.number_of_seats)
+
+	def on_cancel(self):
+		self.calculate_refund()
+		self.db_set("booking_status", "Cancelled", update_modified=False)
+		self.db_set("cancellation_time", now_datetime(), update_modified=False)
+		self.adjust_show_seat_counts(seats_delta=-self.number_of_seats)
+
+	# ---------- validate() helpers ----------
+
+	def validate_show_status(self):
+		show_status = frappe.db.get_value("Show", self.show, "show_status")
+		if show_status not in ("Scheduled", "Now Playing"):
+			frappe.throw(
+				f"Cannot book tickets for a {show_status} show.",
+				title="Show Not Bookable",
+			)
+
+	def validate_no_duplicate_seats_in_booking(self):
+		seen = set()
+		for row in self.seats:
+			if row.seat_label in seen:
+				frappe.throw(
+					f"Seat {row.seat_label} is duplicated within this booking.",
+					title="Duplicate Seat",
+				)
+			seen.add(row.seat_label)
+
+	def validate_seats_not_already_booked(self):
+		"""Checks every seat in this booking against seats already taken
+		by Pending/Confirmed bookings for the same Show, excluding this
+		document itself (relevant on resubmission/amendment)."""
+		if not self.seats:
+			return
+
+		seat_labels = [row.seat_label for row in self.seats]
+
+		taken = frappe.db.sql(
+			"""
+			SELECT bs.seat_label
+			FROM `tabBooked Seat` bs
+			INNER JOIN `tabTicket Booking` tb ON tb.name = bs.parent
+			WHERE tb.show = %(show)s
+			  AND tb.name != %(name)s
+			  AND tb.booking_status IN ('Pending', 'Confirmed')
+			  AND bs.seat_label IN %(seat_labels)s
+			""",
+			{
+				"show": self.show,
+				"name": self.name or "",
+				"seat_labels": seat_labels,
+			},
+			as_dict=True,
+		)
+
+		if taken:
+			frappe.throw(
+				f"Seat {taken[0].seat_label} is already booked for this show.",
+				title="Seat Unavailable",
+			)
+
+	def validate_seat_label_format_and_bounds(self):
+		"""seat_label must match '{ROW_LETTER}-{SEAT_NUMBER}' (e.g. 'A-12'),
+		agree with the row's own row_letter/seat_number fields, and fall
+		within the Screen's seat_rows/seats_per_row bounds. Row letters are
+		derived A, B, C... up to seat_rows (row 1 = A, row 2 = B, etc.)."""
+		if not self.seats or not self.screen:
+			return
+
+		seat_rows, seats_per_row = frappe.db.get_value(
+			"Screen", self.screen, ["seat_rows", "seats_per_row"]
+		)
+		if not seat_rows or not seats_per_row:
+			return
+
+		valid_row_letters = {chr(ord("A") + i) for i in range(seat_rows)}
+
+		for row in self.seats:
+			match = SEAT_LABEL_PATTERN.match(row.seat_label or "")
+			if not match:
+				frappe.throw(
+					f"Seat Label '{row.seat_label}' is not in the required "
+					f"format 'ROW-NUMBER' (e.g. 'A-12').",
+					title="Invalid Seat Label",
+				)
+
+			label_row, label_number = match.group(1), int(match.group(2))
+
+			if row.row_letter != label_row or row.seat_number != label_number:
+				frappe.throw(
+					f"Seat Label '{row.seat_label}' does not match its own "
+					f"Row Letter ('{row.row_letter}') and Seat Number "
+					f"('{row.seat_number}').",
+					title="Invalid Seat Label",
+				)
+
+			if label_row not in valid_row_letters:
+				frappe.throw(
+					f"Row '{label_row}' is out of range for this Screen "
+					f"(valid rows: A–{chr(ord('A') + seat_rows - 1)}).",
+					title="Seat Out of Range",
+				)
+
+			if not (1 <= label_number <= seats_per_row):
+				frappe.throw(
+					f"Seat number {label_number} is out of range for this "
+					f"Screen (valid: 1–{seats_per_row}).",
+					title="Seat Out of Range",
+				)
+
+	def calculate_totals(self):
+		self.number_of_seats = len(self.seats)
+		self.total_amount = (self.number_of_seats or 0) * (self.price_per_seat or 0)
+
+	def validate_seat_count_range(self):
+		if not (1 <= self.number_of_seats <= MAX_SEATS_PER_BOOKING):
+			frappe.throw(
+				f"A booking must contain between 1 and {MAX_SEATS_PER_BOOKING} seats "
+				f"(got {self.number_of_seats}).",
+				title="Invalid Seat Count",
+			)
+
+	# ---------- lifecycle helpers ----------
+
+	def adjust_show_seat_counts(self, seats_delta):
+		"""Positive delta = seats being booked (on_submit): booked_seats
+		increases, available_seats decreases. Negative delta = seats being
+		released (on_cancel): the reverse."""
+		show = frappe.get_doc("Show", self.show)
+		show.db_set("booked_seats", (show.booked_seats or 0) + seats_delta, update_modified=False)
+		show.db_set(
+			"available_seats", (show.available_seats or 0) - seats_delta, update_modified=False
+		)
+
+	def calculate_refund(self):
+		"""CUSTOMER-INITIATED cancellation path (fires via formal .cancel(),
+		i.e. docstatus 1->2). Applies a TIERED refund based on hours
+		between now and the show's start — the customer chose when to
+		cancel, so the penalty schedule applies:
+		  > REFUND_FULL_HOURS      -> REFUND_FULL_PCT
+		  REFUND_PARTIAL_HOURS–REFUND_FULL_HOURS -> REFUND_PARTIAL_PCT
+		  < REFUND_PARTIAL_HOURS   -> REFUND_NONE_PCT
+		This is distinct from Show.cascade_cancellation_if_cancelled()
+		(MTBX-4.1), which handles organization-initiated show cancellations
+		with a flat 100% refund instead. Thresholds are hardcoded
+		placeholders pending MTBX-5 — see TODO at top of file."""
+		
+		show_datetime = get_datetime(f"{self.show_date} {self.start_time}")
+		hours_before_show = (show_datetime - now_datetime()).total_seconds() / 3600
+
+		if hours_before_show > REFUND_FULL_HOURS:
+			refund_pct = REFUND_FULL_PCT
+		elif hours_before_show >= REFUND_PARTIAL_HOURS:
+			refund_pct = REFUND_PARTIAL_PCT
+		else:
+			refund_pct = REFUND_NONE_PCT
+
+		refund_amount = (self.total_amount or 0) * refund_pct / 100
+
+		self.db_set("refund_amount", refund_amount, update_modified=False)
+		self.db_set(
+			"payment_status",
+			"Refunded" if refund_amount > 0 else "Unpaid",
+			update_modified=False,
+		)
