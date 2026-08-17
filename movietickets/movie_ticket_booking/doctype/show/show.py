@@ -153,13 +153,20 @@ class Show(Document):
 			)
 
 	def cascade_cancellation_if_cancelled(self):
-		"""When show_status transitions to Cancelled, auto-cancel every
-		Pending/Confirmed Ticket Booking for this Show: booking_status ->
-		Cancelled, cancellation_reason -> 'Show Cancelled', refund_amount
-		-> total_amount (100%), payment_status -> Refunded.
+		"""ORGANIZATION-INITIATED cancellation path. When a staff member
+		sets show_status to Cancelled (the theater is pulling the show,
+		not the customer choosing to cancel their seats), every
+		Pending/Confirmed Ticket Booking for this Show is auto-cancelled
+		with a FLAT 100% refund — customers aren't penalized for a
+		decision that wasn't theirs. This is deliberately a separate,
+		simpler code path from TicketBooking.on_cancel() (MTBX-4.2), which
+		handles the customer-initiated path and applies the tiered refund
+		schedule instead. Uses direct db-level field updates rather than
+		formal .cancel(), so docstatus is left untouched — only
+		booking_status and related fields change.
+		booking_status -> Cancelled, cancellation_reason -> 'Show Cancelled', refund_amount
+		-> total_amount (100%), payment_status -> Refunded."""
 
-		Deliberately does NOT touch docstatus — see open question flagged
-		for MTBX-4.2."""
 		if not self.has_value_changed("show_status") or self.show_status != "Cancelled":
 			return
 
