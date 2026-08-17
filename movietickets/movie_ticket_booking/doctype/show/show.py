@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import get_time
+from frappe.utils import get_time, getdate
 
 
 class Show(Document):
@@ -34,33 +34,26 @@ class Show(Document):
 
 	_DOCTYPE_NAME = "Show"
 
-	def validate(self):
-		self.set_ticket_price_default()
+	def before_insert(self):
 		self.compute_end_time()
+		self.set_ticket_price_default()
 		self.set_initial_seat_counts()
 
-	def set_ticket_price_default(self):
-		"""ticket_price defaults from the Screen's base_price when empty.
-		Not client-side Mandatory, since Frappe enforces Mandatory fields
-		before validate() ever runs on the server — that would block this
-		default from ever executing. Enforced here instead, after the
-		default has had a chance to apply."""
-		if not self.ticket_price and self.screen:
-			base_price = frappe.db.get_value("Screen", self.screen, "base_price")
-			if base_price:
-				self.ticket_price = base_price
+	def validate(self):
+		self.ensure_ticket_price_present()
+		self.validate_show_date_not_past()
+		self.validate_movie_not_ended()
+		self.validate_no_overlap()
 
-		if not self.ticket_price:
-			frappe.throw(
-				"Ticket Price is required and could not be defaulted from the "
-				"Screen's base price. Please enter it manually.",
-				title="Ticket Price Required",
-			)
-			
+	def on_update(self):
+		self.cascade_cancellation_if_cancelled()
+
 	def compute_end_time(self):
 		"""end_time = start_time + movie.duration_minutes.
-		Recomputed whenever movie or start_time is set/changed, since both
-		determine the result."""
+		Per MTBX-4.1 spec, this now runs only in before_insert — editing
+		start_time on an existing Show will NOT recompute end_time.
+		Previously this ran in validate() on every save; narrowed here
+		to match spec. Flag as a follow-up if live recompute is wanted."""
 		if not self.movie or not self.start_time:
 			return
 
@@ -74,11 +67,119 @@ class Show(Document):
 
 		self.end_time = end_dt.time()
 
+	def set_ticket_price_default(self):
+		"""ticket_price defaults from Screen.base_price if not explicitly
+		provided, at creation only (before_insert per spec). The separate
+		'must not be empty' guard remains in validate() so edits that
+		clear the field later are still caught."""
+		if not self.ticket_price and self.screen:
+			base_price = frappe.db.get_value("Screen", self.screen, "base_price")
+			if base_price:
+				self.ticket_price = base_price
+
+	def ensure_ticket_price_present(self):
+		"""Runs on every save (not just insert). ticket_price is not
+		client-side Mandatory — see earlier fix — so this is the actual
+		enforcement that the field can never end up empty."""
+		if not self.ticket_price:
+			frappe.throw(
+				"Ticket Price is required and could not be defaulted from the "
+				"Screen's base price. Please enter it manually.",
+				title="Ticket Price Required",
+			)
+
 	def set_initial_seat_counts(self):
-		"""available_seats mirrors total_seats only at creation time — not
-		a live fetch_from, since future booking logic (MTBX-3) will need to
-		decrement available_seats independently as seats get booked."""
-		if self.is_new():
-			self.booked_seats = 0
-			if self.total_seats:
-				self.available_seats = self.total_seats
+		"""available_seats = screen.total_seats at creation time only.
+		total_seats itself is fetch_from screen.total_seats and populates
+		on its own — no need to set it manually here."""
+		self.booked_seats = 0
+		if self.total_seats:
+			self.available_seats = self.total_seats
+
+	def validate_show_date_not_past(self):
+		if not self.show_date:
+			return
+		if getdate(self.show_date) < getdate():
+			frappe.throw(
+				"Show Date cannot be in the past.",
+				title="Invalid Show Date",
+			)
+
+	def validate_movie_not_ended(self):
+		if not self.movie:
+			return
+		movie_status = frappe.db.get_value("Movie", self.movie, "movie_status")
+		if movie_status == "Ended":
+			frappe.throw(
+				"Cannot schedule a Show for a movie whose status is Ended.",
+				title="Movie Has Ended",
+			)
+
+	def validate_no_overlap(self):
+		"""No other Show on the same screen should overlap this show's
+		time window (start_time to end_time) on the same show_date.
+		Excludes Cancelled shows from the conflict check — assumption,
+		not stated explicitly in spec."""
+		if not (self.screen and self.show_date and self.start_time and self.end_time):
+			return
+
+		conflicts = frappe.db.sql(
+			"""
+			SELECT name, start_time, end_time
+			FROM `tabShow`
+			WHERE screen = %(screen)s
+			  AND show_date = %(show_date)s
+			  AND name != %(name)s
+			  AND show_status != 'Cancelled'
+			  AND start_time < %(end_time)s
+			  AND end_time > %(start_time)s
+			""",
+			{
+				"screen": self.screen,
+				"show_date": self.show_date,
+				"name": self.name or "",
+				"start_time": self.end_time,
+				"end_time": self.start_time,
+			},
+			as_dict=True,
+		)
+
+		if conflicts:
+			existing = conflicts[0]
+			frappe.throw(
+				f"Screen {self.screen} already has a show scheduled from "
+				f"{existing.start_time} to {existing.end_time} on {self.show_date}.",
+				title="Show Time Conflict",
+			)
+
+	def cascade_cancellation_if_cancelled(self):
+		"""When show_status transitions to Cancelled, auto-cancel every
+		Pending/Confirmed Ticket Booking for this Show: booking_status ->
+		Cancelled, cancellation_reason -> 'Show Cancelled', refund_amount
+		-> total_amount (100%), payment_status -> Refunded.
+
+		Deliberately does NOT touch docstatus — see open question flagged
+		for MTBX-4.2."""
+		if not self.has_value_changed("show_status") or self.show_status != "Cancelled":
+			return
+
+		bookings = frappe.get_all(
+			"Ticket Booking",
+			filters={"show": self.name, "booking_status": ["in", ["Pending", "Confirmed"]]},
+			pluck="name",
+		)
+
+		for booking_name in bookings:
+			total_amount = frappe.db.get_value("Ticket Booking", booking_name, "total_amount") or 0
+			frappe.db.set_value(
+				"Ticket Booking",
+				booking_name,
+				{
+					"booking_status": "Cancelled",
+					"cancellation_reason": "Show Cancelled",
+					"refund_amount": total_amount,
+					"payment_status": "Refunded",
+					"cancellation_time": frappe.utils.now_datetime(),
+				},
+				update_modified=False,
+			)
