@@ -1,0 +1,87 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "format:{theater_name} - {city}",
+ "creation": "2026-08-17 10:35:49.943136",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "theater_name",
+  "city",
+  "address",
+  "phone",
+  "is_active",
+  "total_screens"
+ ],
+ "fields": [
+  {
+   "fieldname": "theater_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Theater Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "city",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "City",
+   "reqd": 1
+  },
+  {
+   "fieldname": "address",
+   "fieldtype": "Small Text",
+   "label": "Address",
+   "reqd": 1
+  },
+  {
+   "fieldname": "phone",
+   "fieldtype": "Data",
+   "label": "Phone"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Is Active"
+  },
+  {
+   "default": "0",
+   "fieldname": "total_screens",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Total Screens",
+   "read_only": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-17 10:59:25.436274",
+ "modified_by": "Administrator",
+ "module": "Movie Ticket Booking",
+ "name": "Theater",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
