@@ -229,3 +229,22 @@ class TicketBooking(Document):
 			"Refunded" if refund_amount > 0 else "Unpaid",
 			update_modified=False,
 		)
+
+	def has_permission(doc, ptype="read", user=None):
+		"""Row-level restriction: a user with only the Customer role may read
+		their own bookings (booked_by == user), but not others'. Cinema
+		Manager and Box Office Staff are unrestricted here — their DocType-
+		level permission rules (full/staff CRUD) already grant broader
+		access, and this function only needs to narrow things further for
+		Customer, not re-grant what those roles already have."""
+		user = user or frappe.session.user
+
+		if "Cinema Manager" in frappe.get_roles(user) or "Box Office Staff" in frappe.get_roles(user):
+			return True
+
+		if "Customer" in frappe.get_roles(user):
+			return doc.booked_by == user
+
+		return True
+
+	
