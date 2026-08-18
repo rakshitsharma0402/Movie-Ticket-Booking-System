@@ -41,6 +41,7 @@
   {
    "fieldname": "language",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Language",
    "options": "English\nHindi\nGujarati\nTamil\nTelugu\nOther",
    "reqd": 1
@@ -75,6 +76,7 @@
    "default": "UA",
    "fieldname": "rating",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Rating",
    "options": "U\nUA\nA\nS"
   },
@@ -123,7 +125,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-14 19:53:13.679169",
+ "modified": "2026-08-18 13:39:46.196761",
  "modified_by": "Administrator",
  "module": "Movie Ticket Booking",
  "name": "Movie",
