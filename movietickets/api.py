@@ -315,3 +315,101 @@ def send_booking_confirmation(booking_name):
 		"success": True,
 		"message": f"Confirmation email sent to {booking.customer_email}.",
 	}
+
+
+@frappe.whitelist()
+def get_revenue_summary(theater=None, from_date=None, to_date=None):
+	"""Aggregate revenue/occupancy report, optionally filtered by theater
+	and/or show date range. Requires an authenticated session.
+
+	Only Ticket Bookings with docstatus=1 and booking_status='Confirmed'
+	count toward totals — Pending bookings haven't been paid for, and
+	Cancelled/Expired ones represent no revenue. This scope is an
+	assumption; the spec doesn't state it explicitly.
+
+	Date filters apply to show_date (when the movie screened), not
+	booking_time (when the ticket was purchased) — also an assumption.
+
+	avg_occupancy_pct is computed at the Show level: total seats sold
+	(from confirmed bookings) divided by total seat capacity across all
+	Shows matching the same theater/date filters, regardless of whether
+	a given Show had any bookings at all.
+
+	Returns:
+		{"total_bookings": 42, "total_revenue": 18900.0,
+		 "total_seats_sold": 126, "avg_occupancy_pct": 34.5,
+		 "top_movie": "Inception"}
+	"""
+	booking_conditions = ["tb.docstatus = 1", "tb.booking_status = 'Confirmed'"]
+	show_conditions = ["sh.show_status IN ('Scheduled', 'Now Playing', 'Completed')"]
+	params = {}
+
+	if theater:
+		booking_conditions.append("tb.theater = %(theater)s")
+		show_conditions.append("sh.theater = %(theater)s")
+		params["theater"] = theater
+
+	if from_date:
+		booking_conditions.append("tb.show_date >= %(from_date)s")
+		show_conditions.append("sh.show_date >= %(from_date)s")
+		params["from_date"] = from_date
+
+	if to_date:
+		booking_conditions.append("tb.show_date <= %(to_date)s")
+		show_conditions.append("sh.show_date <= %(to_date)s")
+		params["to_date"] = to_date
+
+	booking_where = " AND ".join(booking_conditions)
+	show_where = " AND ".join(show_conditions)
+
+	booking_stats = frappe.db.sql(
+		f"""
+		SELECT
+			COUNT(*) AS total_bookings,
+			COALESCE(SUM(tb.total_amount), 0) AS total_revenue,
+			COALESCE(SUM(tb.number_of_seats), 0) AS total_seats_sold
+		FROM `tabTicket Booking` tb
+		WHERE {booking_where}
+		""",
+		params,
+		as_dict=True,
+	)[0]
+
+	top_movie_row = frappe.db.sql(
+		f"""
+		SELECT tb.movie_title AS movie_title, SUM(tb.total_amount) AS revenue
+		FROM `tabTicket Booking` tb
+		WHERE {booking_where}
+		GROUP BY tb.movie_title
+		ORDER BY revenue DESC
+		LIMIT 1
+		""",
+		params,
+		as_dict=True,
+	)
+	top_movie = top_movie_row[0].movie_title if top_movie_row else None
+
+	total_capacity_row = frappe.db.sql(
+		f"""
+		SELECT COALESCE(SUM(sh.total_seats), 0) AS total_capacity
+		FROM `tabShow` sh
+		WHERE {show_where}
+		""",
+		params,
+		as_dict=True,
+	)[0]
+
+	total_capacity = total_capacity_row.total_capacity or 0
+	avg_occupancy_pct = (
+		round((booking_stats.total_seats_sold / total_capacity) * 100, 2)
+		if total_capacity > 0
+		else 0
+	)
+
+	return {
+		"total_bookings": booking_stats.total_bookings,
+		"total_revenue": booking_stats.total_revenue,
+		"total_seats_sold": booking_stats.total_seats_sold,
+		"avg_occupancy_pct": avg_occupancy_pct,
+		"top_movie": top_movie,
+	}
