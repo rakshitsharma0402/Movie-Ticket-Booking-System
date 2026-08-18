@@ -10,6 +10,31 @@ from frappe.utils import getdate
 
 
 class Movie(Document):
+    # begin: auto-generated types
+    # This code is auto-generated. Do not modify anything in this block.
+
+    from typing import TYPE_CHECKING
+
+    if TYPE_CHECKING:
+        from frappe.types import DF
+
+        director: DF.Data | None
+        duration_minutes: DF.Int
+        end_date: DF.Date | None
+        genre: DF.Link
+        language: DF.Literal["English", "Hindi", "Gujarati", "Tamil", "Telugu", "Other"]
+        movie_cast: DF.SmallText | None
+        movie_status: DF.Literal["Upcoming", "Now Showing", "Ended"]
+        naming_series: DF.Literal["MOV-.#####"]
+        poster: DF.AttachImage | None
+        rating: DF.Literal["U", "UA", "A", "S"]
+        release_date: DF.Date
+        slug: DF.Data | None
+        synopsis: DF.TextEditor | None
+        title: DF.Data
+        trailer_url: DF.Data | None
+    # end: auto-generated types
+
     def before_save(self):
         self.generate_slug()
 

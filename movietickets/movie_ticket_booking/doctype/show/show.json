@@ -84,6 +84,7 @@
   {
    "fieldname": "available_seats",
    "fieldtype": "Int",
+   "in_list_view": 1,
    "label": "Available Seats",
    "read_only": 1
   },
@@ -118,7 +119,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-17 12:27:00.253093",
+ "modified": "2026-08-18 13:40:19.675265",
  "modified_by": "Administrator",
  "module": "Movie Ticket Booking",
  "name": "Show",
