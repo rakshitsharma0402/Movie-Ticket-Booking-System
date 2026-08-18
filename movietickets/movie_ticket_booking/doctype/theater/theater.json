@@ -59,7 +59,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-17 10:59:25.436274",
+ "modified": "2026-08-18 16:28:30.781797",
  "modified_by": "Administrator",
  "module": "Movie Ticket Booking",
  "name": "Theater",
@@ -77,6 +77,27 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Cinema Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Box Office Staff",
+   "share": 1
   }
  ],
  "row_format": "Dynamic",
