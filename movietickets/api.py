@@ -88,17 +88,15 @@ def create_booking(show, customer_name, customer_email, customer_phone, seats):
 	"""Creates a Ticket Booking with race-condition-safe seat re-validation.
 
 	seats: list of seat_label strings (e.g. ["A-5", "A-6"]), or a JSON-
-	encoded string of the same — whitelisted methods often receive list
-	arguments as JSON strings when called over HTTP rather than from the
-	console, so both forms are accepted here.
+	encoded string of the same.
 
-	Locks the Show document for the duration of booking creation, then
-	delegates the actual re-validation to TicketBooking.validate() (built
-	in MTBX-4.2) via booking.insert() — that method already re-checks show
-	status, per-seat availability, duplicate seats, seat count range, and
-	seat_label bounds. Duplicating those checks here would just create a
-	second copy to keep in sync; the lock is the only new ingredient this
-	endpoint needs to add.
+	Locks the Show document (via Document.lock()/.unlock(), Frappe's
+	Redis-backed document lock — frappe.lock_doc is not available in this
+	Frappe version) for the duration of booking creation, then delegates
+	re-validation to TicketBooking.validate() (MTBX-4.2) via
+	booking.insert() — that method already re-checks show status, per-seat
+	availability, duplicate seats, seat count range, and seat_label
+	bounds. The lock is the only new ingredient this endpoint adds.
 
 	Returns:
 		{"success": True, "booking_name": "BKG-2026-00001",
@@ -124,10 +122,12 @@ def create_booking(show, customer_name, customer_email, customer_phone, seats):
 			{"seat_label": seat_label, "row_letter": row_letter, "seat_number": seat_number}
 		)
 
+	show_doc = frappe.get_doc("Show", show)
+
 	try:
-		frappe.lock_doc("Show", show)
+		show_doc.lock()
 	except Exception:
-		frappe.log_error(frappe.get_traceback(), "create_booking: lock_doc failed")
+		frappe.log_error(frappe.get_traceback(), "create_booking: lock failed")
 		frappe.throw("Could not acquire a lock on this show. Please try again in a moment.")
 
 	try:
@@ -142,10 +142,6 @@ def create_booking(show, customer_name, customer_email, customer_phone, seats):
 				"seats": seat_rows,
 			}
 		)
-		# insert() runs TicketBooking.validate() — the show-status check,
-		# per-seat availability check, duplicate-seat check, seat count
-		# range, and seat_label bounds check are all re-run here, now
-		# safely inside the Show-level lock acquired above.
 		booking.insert(ignore_permissions=True)
 		frappe.db.commit()
 
@@ -157,9 +153,6 @@ def create_booking(show, customer_name, customer_email, customer_phone, seats):
 		}
 
 	except frappe.ValidationError:
-		# Expected, user-facing validation failures (seat taken, show not
-		# bookable, etc.) — roll back and let the original message surface
-		# to the client as-is, no need to log these as system errors.
 		frappe.db.rollback()
 		raise
 
@@ -169,4 +162,4 @@ def create_booking(show, customer_name, customer_email, customer_phone, seats):
 		frappe.throw("An unexpected error occurred while creating the booking. Please try again.")
 
 	finally:
-		frappe.unlock_doc("Show", show)
+		show_doc.unlock()
