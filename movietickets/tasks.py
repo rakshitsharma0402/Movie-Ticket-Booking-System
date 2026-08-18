@@ -70,4 +70,50 @@ def update_movie_status():
 
 	frappe.db.commit()
 
-	
+
+def update_show_status():
+	"""MTBX-11.3 — hourly.
+	Transitions Show.show_status via direct bulk SQL (not per-document
+	Python, for efficiency at scale):
+	  Scheduled -> Now Playing: today's shows where start_time has
+	    passed but end_time hasn't.
+	  Scheduled/Now Playing -> Completed: end_time has passed today,
+	    OR the show's date is entirely in the past.
+	Cancelled shows are never touched (excluded implicitly since the
+	WHERE clauses only match Scheduled/Now Playing).
+
+	Known limitation: shows whose end_time wraps past midnight (see
+	the flag from MTBX-2's compute_end_time) will show an end_time
+	that appears EARLIER than start_time with no day-rollover marker,
+	which could cause this comparison to misjudge such a show as
+	already-completed prematurely. None of the current sample data
+	hits this case."""
+	current_date = today()
+	current_time = nowtime()
+
+	frappe.db.sql(
+		"""
+		UPDATE `tabShow`
+		SET show_status = 'Now Playing'
+		WHERE show_date = %(today)s
+		  AND start_time <= %(now_time)s
+		  AND end_time > %(now_time)s
+		  AND show_status = 'Scheduled'
+		""",
+		{"today": current_date, "now_time": current_time},
+	)
+
+	frappe.db.sql(
+		"""
+		UPDATE `tabShow`
+		SET show_status = 'Completed'
+		WHERE show_status IN ('Scheduled', 'Now Playing')
+		  AND (
+		      show_date < %(today)s
+		      OR (show_date = %(today)s AND end_time <= %(now_time)s)
+		  )
+		""",
+		{"today": current_date, "now_time": current_time},
+	)
+
+	frappe.db.commit()
