@@ -170,3 +170,73 @@ def create_booking(show, customer_name, customer_email, customer_phone, seats):
 
 	finally:
 		frappe.unlock_doc("Show", show)
+
+
+@frappe.whitelist(allow_guest=True)
+def get_shows_for_movie(movie, city=None, date=None):
+	"""Returns upcoming Shows for a given Movie, for the public portal.
+	Guest-accessible — no session required.
+
+	'Upcoming' means show_date >= today and show_status in
+	(Scheduled, Now Playing) — Cancelled/Completed shows are excluded.
+	This is an interpretation, not explicitly defined in the spec; flag
+	if same-day-but-already-started shows should also be excluded.
+
+	city filters by the linked Theater's actual city field (a proper
+	join), not a substring match against Show.theater's denormalized
+	"<theater_name> - <city>" string, since that would be fragile.
+
+	date, if given, filters to that exact show_date instead of the
+	default "today onward" range.
+
+	movie is expected to be the Movie's docname (e.g. "MOV-00001"), not
+	its title — consistent with how movie is referenced elsewhere in
+	the schema (Show.movie is a Link).
+
+	Returns a list of dicts:
+		[{"show_name": "SHW-2026-00001", "theater": "PVR IMAX - Ahmedabad",
+		  "screen": "PVR IMAX-Screen 1", "screen_type": "IMAX",
+		  "show_date": "2026-04-18", "start_time": "10:00:00",
+		  "ticket_price": 450.0, "available_seats": 240}, ...]
+	"""
+	if not movie:
+		frappe.throw("movie is required.")
+
+	conditions = ["sh.movie = %(movie)s", "sh.show_status IN ('Scheduled', 'Now Playing')"]
+	params = {"movie": movie}
+
+	if date:
+		conditions.append("sh.show_date = %(date)s")
+		params["date"] = date
+	else:
+		conditions.append("sh.show_date >= %(today)s")
+		params["today"] = frappe.utils.today()
+
+	if city:
+		conditions.append("th.city = %(city)s")
+		params["city"] = city
+
+	where_clause = " AND ".join(conditions)
+
+	shows = frappe.db.sql(
+		f"""
+		SELECT
+			sh.name AS show_name,
+			sh.theater AS theater,
+			sh.screen AS screen,
+			sc.screen_type AS screen_type,
+			sh.show_date AS show_date,
+			sh.start_time AS start_time,
+			sh.ticket_price AS ticket_price,
+			sh.available_seats AS available_seats
+		FROM `tabShow` sh
+		INNER JOIN `tabScreen` sc ON sc.name = sh.screen
+		INNER JOIN `tabTheater` th ON th.name = sh.theater
+		WHERE {where_clause}
+		ORDER BY sh.show_date ASC, sh.start_time ASC
+		""",
+		params,
+		as_dict=True,
+	)
+
+	return shows
