@@ -1,0 +1,42 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<div class="my-bookings-page" style="max-width: 900px; margin: 0 auto; padding: 24px 16px;">
+	<h1 style="margin-bottom: 20px;">{{ _("My Bookings") }}</h1>
+
+	{% if not bookings %}
+		<p>{{ _("You have no bookings yet.") }}</p>
+	{% else %}
+	<table class="table table-bordered" style="width:100%;">
+		<thead>
+			<tr>
+				<th>{{ _("Booking ID") }}</th>
+				<th>{{ _("Movie") }}</th>
+				<th>{{ _("Show Date/Time") }}</th>
+				<th>{{ _("Seats") }}</th>
+				<th>{{ _("Amount") }}</th>
+				<th>{{ _("Status") }}</th>
+			</tr>
+		</thead>
+		<tbody>
+			{% for booking in bookings %}
+			{% set badge_color = {
+				"Confirmed": "success",
+				"Pending": "info",
+				"Cancelled": "danger",
+				"Expired": "secondary"
+			}.get(booking.booking_status, "secondary") %}
+			<tr>
+				<td><a href="/app/ticket-booking/{{ booking.name }}">{{ booking.name }}</a></td>
+				<td>{{ booking.movie_title }}</td>
+				<td>{{ booking.show_date }} {{ booking.start_time }}</td>
+				<td>{{ booking.number_of_seats }}</td>
+				<td>&#8377;{{ booking.total_amount }}</td>
+				<td><span class="badge badge-{{ badge_color }}">{{ booking.booking_status }}</span></td>
+			</tr>
+			{% endfor %}
+		</tbody>
+	</table>
+	{% endif %}
+</div>
+{% endblock %}
