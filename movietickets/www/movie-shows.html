@@ -1,0 +1,57 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<div class="movie-shows-page" style="max-width: 900px; margin: 0 auto; padding: 24px 16px;">
+	<h1 style="margin-bottom: 4px;">{{ movie.title }}</h1>
+	<p style="color:#666; margin-bottom:24px;">{{ movie.language }} &middot; {{ movie.genre }} &middot; {{ movie.rating }}</p>
+
+	{% if not grouped_shows %}
+		<p>{{ _("No upcoming shows for this movie.") }}</p>
+	{% endif %}
+
+	{% for theater, dates in grouped_shows.items() %}
+	<div class="theater-group" style="margin-bottom:28px;">
+		<h3>{{ theater }}</h3>
+		{% for date, shows in dates.items() %}
+		<div style="margin-bottom:16px;">
+			<h5 style="color:#888;">{{ date }}</h5>
+			<div style="display:flex; gap:12px; flex-wrap:wrap;">
+				{% for show in shows %}
+				<div class="show-card" style="border:1px solid #eee; border-radius:8px; padding:12px; min-width:160px;">
+					<div style="font-weight:bold;">{{ show.screen_type }}</div>
+					<div style="font-size:13px; color:#666;">{{ show.start_time }}</div>
+					<div style="font-size:13px;">&#8377;{{ show.ticket_price }}</div>
+					<div style="font-size:12px; color:#888;">{{ show.available_seats }} {{ _("seats left") }}</div>
+					<button
+						class="btn btn-sm btn-primary book-now-btn"
+						style="margin-top:8px; width:100%;"
+						data-show="{{ show.show_name }}"
+					>{{ _("Book Now") }}</button>
+				</div>
+				{% endfor %}
+			</div>
+		</div>
+		{% endfor %}
+	</div>
+	{% endfor %}
+</div>
+
+<script>
+	// Booking requires login; viewing this page does not. Guests get
+	// redirected to login with a redirect-back target instead of being
+	// silently blocked.
+	document.querySelectorAll(".book-now-btn").forEach(function (btn) {
+		btn.addEventListener("click", function () {
+			var show_name = btn.getAttribute("data-show");
+			{% if is_guest %}
+			window.location.href = "/login?redirect-to=" + encodeURIComponent(window.location.pathname + window.location.search);
+			{% else %}
+			// Booking-flow destination (seat selection / create_booking call)
+			// is not specified by this ticket beyond "Book Now" existing —
+			// routing target TBD, flagging as a follow-up.
+			window.location.href = "/book-seats?show=" + encodeURIComponent(show_name);
+			{% endif %}
+		});
+	});
+</script>
+{% endblock %}
