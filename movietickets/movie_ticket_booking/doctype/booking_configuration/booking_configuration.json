@@ -62,7 +62,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-08-17 16:46:22.266607",
+ "modified": "2026-08-18 16:31:08.059260",
  "modified_by": "Administrator",
  "module": "Movie Ticket Booking",
  "name": "Booking Configuration",
@@ -73,6 +73,14 @@
    "print": 1,
    "read": 1,
    "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Cinema Manager",
    "share": 1,
    "write": 1
   }
