@@ -288,3 +288,7 @@ fixtures = [
 		"filters": [["doc_type", "=", "Show"]],
 	},
 ]
+
+has_permission = {
+	"Ticket Booking": "movietickets.movie_ticket_booking.doctype.ticket_booking.ticket_booking.has_permission",
+}
