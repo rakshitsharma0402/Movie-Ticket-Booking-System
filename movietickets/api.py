@@ -163,3 +163,247 @@ def create_booking(show, customer_name, customer_email, customer_phone, seats):
 
 	finally:
 		show_doc.unlock()
+
+
+@frappe.whitelist(allow_guest=True)
+def get_shows_for_movie(movie, city=None, date=None):
+	"""Returns upcoming Shows for a given Movie, for the public portal.
+	Guest-accessible — no session required.
+
+	'Upcoming' means show_date >= today and show_status in
+	(Scheduled, Now Playing) — Cancelled/Completed shows are excluded.
+	This is an interpretation, not explicitly defined in the spec; flag
+	if same-day-but-already-started shows should also be excluded.
+
+	city filters by the linked Theater's actual city field (a proper
+	join), not a substring match against Show.theater's denormalized
+	"<theater_name> - <city>" string, since that would be fragile.
+
+	date, if given, filters to that exact show_date instead of the
+	default "today onward" range.
+
+	movie is expected to be the Movie's docname (e.g. "MOV-00001"), not
+	its title — consistent with how movie is referenced elsewhere in
+	the schema (Show.movie is a Link).
+
+	Returns a list of dicts:
+		[{"show_name": "SHW-2026-00001", "theater": "PVR IMAX - Ahmedabad",
+		  "screen": "PVR IMAX-Screen 1", "screen_type": "IMAX",
+		  "show_date": "2026-04-18", "start_time": "10:00:00",
+		  "ticket_price": 450.0, "available_seats": 240}, ...]
+	"""
+	if not movie:
+		frappe.throw("movie is required.")
+
+	conditions = ["sh.movie = %(movie)s", "sh.show_status IN ('Scheduled', 'Now Playing')"]
+	params = {"movie": movie}
+
+	if date:
+		conditions.append("sh.show_date = %(date)s")
+		params["date"] = date
+	else:
+		conditions.append("sh.show_date >= %(today)s")
+		params["today"] = frappe.utils.today()
+
+	if city:
+		conditions.append("th.city = %(city)s")
+		params["city"] = city
+
+	where_clause = " AND ".join(conditions)
+
+	shows = frappe.db.sql(
+		f"""
+		SELECT
+			sh.name AS show_name,
+			sh.theater AS theater,
+			sh.screen AS screen,
+			sc.screen_type AS screen_type,
+			sh.show_date AS show_date,
+			sh.start_time AS start_time,
+			sh.ticket_price AS ticket_price,
+			sh.available_seats AS available_seats
+		FROM `tabShow` sh
+		INNER JOIN `tabScreen` sc ON sc.name = sh.screen
+		INNER JOIN `tabTheater` th ON th.name = sh.theater
+		WHERE {where_clause}
+		ORDER BY sh.show_date ASC, sh.start_time ASC
+		""",
+		params,
+		as_dict=True,
+	)
+
+	return shows
+
+
+@frappe.whitelist()
+def send_booking_confirmation(booking_name):
+	"""Sends a formatted HTML confirmation email to the customer for a
+	given Ticket Booking. Requires an authenticated session
+	(allow_guest defaults to False).
+
+	Pulls movie/theater/screen/show_date/start_time directly from the
+	booking's own fetched fields (set via fetch_from in MTBX-3.1), and
+	seat labels from the booking's Seats child table. Queues the email
+	via frappe.sendmail() — actual delivery depends on an outgoing email
+	account being configured on the site; a successful call here means
+	the email was queued, not necessarily delivered.
+
+	Returns:
+		{"success": True, "message": "Confirmation email sent to
+		 <email>."}
+	"""
+	if not booking_name:
+		frappe.throw("booking_name is required.")
+
+	booking = frappe.get_doc("Ticket Booking", booking_name)
+
+	seat_labels = ", ".join(row.seat_label for row in booking.seats)
+
+	html_message = f"""
+	<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+		<h2 style="color: #1a1a1a;">Booking Confirmed 🎬</h2>
+		<p>Hi {frappe.utils.escape_html(booking.customer_name)},</p>
+		<p>Your ticket booking is confirmed. Here are your details:</p>
+		<table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+			<tr>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Booking ID</strong></td>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;">{booking.name}</td>
+			</tr>
+			<tr>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Movie</strong></td>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;">{frappe.utils.escape_html(booking.movie_title or "")}</td>
+			</tr>
+			<tr>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Theater</strong></td>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;">{frappe.utils.escape_html(booking.theater or "")}</td>
+			</tr>
+			<tr>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Screen</strong></td>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;">{frappe.utils.escape_html(booking.screen or "")}</td>
+			</tr>
+			<tr>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Show Time</strong></td>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;">{booking.show_date} at {booking.start_time}</td>
+			</tr>
+			<tr>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Seats</strong></td>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;">{seat_labels}</td>
+			</tr>
+			<tr>
+				<td style="padding: 8px;"><strong>Total Amount</strong></td>
+				<td style="padding: 8px;">₹{booking.total_amount}</td>
+			</tr>
+		</table>
+		<p style="color: #666; font-size: 13px;">Please arrive at least 15 minutes before showtime.</p>
+	</div>
+	"""
+
+	frappe.sendmail(
+		recipients=[booking.customer_email],
+		subject=f"Booking Confirmed — {booking.movie_title} ({booking.name})",
+		message=html_message,
+	)
+
+	return {
+		"success": True,
+		"message": f"Confirmation email sent to {booking.customer_email}.",
+	}
+
+
+@frappe.whitelist()
+def get_revenue_summary(theater=None, from_date=None, to_date=None):
+	"""Aggregate revenue/occupancy report, optionally filtered by theater
+	and/or show date range. Requires an authenticated session.
+
+	Only Ticket Bookings with docstatus=1 and booking_status='Confirmed'
+	count toward totals — Pending bookings haven't been paid for, and
+	Cancelled/Expired ones represent no revenue. This scope is an
+	assumption; the spec doesn't state it explicitly.
+
+	Date filters apply to show_date (when the movie screened), not
+	booking_time (when the ticket was purchased) — also an assumption.
+
+	avg_occupancy_pct is computed at the Show level: total seats sold
+	(from confirmed bookings) divided by total seat capacity across all
+	Shows matching the same theater/date filters, regardless of whether
+	a given Show had any bookings at all.
+
+	Returns:
+		{"total_bookings": 42, "total_revenue": 18900.0,
+		 "total_seats_sold": 126, "avg_occupancy_pct": 34.5,
+		 "top_movie": "Inception"}
+	"""
+	booking_conditions = ["tb.docstatus = 1", "tb.booking_status = 'Confirmed'"]
+	show_conditions = ["sh.show_status IN ('Scheduled', 'Now Playing', 'Completed')"]
+	params = {}
+
+	if theater:
+		booking_conditions.append("tb.theater = %(theater)s")
+		show_conditions.append("sh.theater = %(theater)s")
+		params["theater"] = theater
+
+	if from_date:
+		booking_conditions.append("tb.show_date >= %(from_date)s")
+		show_conditions.append("sh.show_date >= %(from_date)s")
+		params["from_date"] = from_date
+
+	if to_date:
+		booking_conditions.append("tb.show_date <= %(to_date)s")
+		show_conditions.append("sh.show_date <= %(to_date)s")
+		params["to_date"] = to_date
+
+	booking_where = " AND ".join(booking_conditions)
+	show_where = " AND ".join(show_conditions)
+
+	booking_stats = frappe.db.sql(
+		f"""
+		SELECT
+			COUNT(*) AS total_bookings,
+			COALESCE(SUM(tb.total_amount), 0) AS total_revenue,
+			COALESCE(SUM(tb.number_of_seats), 0) AS total_seats_sold
+		FROM `tabTicket Booking` tb
+		WHERE {booking_where}
+		""",
+		params,
+		as_dict=True,
+	)[0]
+
+	top_movie_row = frappe.db.sql(
+		f"""
+		SELECT tb.movie_title AS movie_title, SUM(tb.total_amount) AS revenue
+		FROM `tabTicket Booking` tb
+		WHERE {booking_where}
+		GROUP BY tb.movie_title
+		ORDER BY revenue DESC
+		LIMIT 1
+		""",
+		params,
+		as_dict=True,
+	)
+	top_movie = top_movie_row[0].movie_title if top_movie_row else None
+
+	total_capacity_row = frappe.db.sql(
+		f"""
+		SELECT COALESCE(SUM(sh.total_seats), 0) AS total_capacity
+		FROM `tabShow` sh
+		WHERE {show_where}
+		""",
+		params,
+		as_dict=True,
+	)[0]
+
+	total_capacity = total_capacity_row.total_capacity or 0
+	avg_occupancy_pct = (
+		round((booking_stats.total_seats_sold / total_capacity) * 100, 2)
+		if total_capacity > 0
+		else 0
+	)
+
+	return {
+		"total_bookings": booking_stats.total_bookings,
+		"total_revenue": booking_stats.total_revenue,
+		"total_seats_sold": booking_stats.total_seats_sold,
+		"avg_occupancy_pct": avg_occupancy_pct,
+		"top_movie": top_movie,
+	}
+
