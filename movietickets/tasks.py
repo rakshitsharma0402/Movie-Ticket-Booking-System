@@ -47,3 +47,27 @@ def expire_stale_bookings():
 	if stale_bookings:
 		frappe.db.commit()
 
+
+def update_movie_status():
+	"""MTBX-11.2 — daily.
+	Recalculates movie_status for every Movie by reusing the existing
+	Movie.compute_movie_status() controller method (MTBX-1.2), so this
+	job and the Movie doctype's own logic never drift apart. This is
+	the fix for the staleness gap flagged back in MTBX-1.2: without
+	this job, movie_status only ever updated when someone happened to
+	resave a Movie record."""
+	movie_names = frappe.get_all("Movie", pluck="name")
+
+	for movie_name in movie_names:
+		movie = frappe.get_doc("Movie", movie_name)
+		old_status = movie.movie_status
+		movie.compute_movie_status()
+
+		if movie.movie_status != old_status:
+			frappe.db.set_value(
+				"Movie", movie_name, "movie_status", movie.movie_status, update_modified=False
+			)
+
+	frappe.db.commit()
+
+	
