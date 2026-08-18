@@ -292,3 +292,13 @@ fixtures = [
 has_permission = {
 	"Ticket Booking": "movietickets.movie_ticket_booking.doctype.ticket_booking.ticket_booking.has_permission",
 }
+
+scheduler_events = {
+	"cron": {
+		"*/5 * * * *": ["movietickets.tasks.expire_stale_bookings"],
+		"0 23 * * *": ["movietickets.tasks.send_daily_revenue_digest"],
+	},
+	"daily": ["movietickets.tasks.update_movie_status"],
+	"hourly": ["movietickets.tasks.update_show_status"],
+}
+
