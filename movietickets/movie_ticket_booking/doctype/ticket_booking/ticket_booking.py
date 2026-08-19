@@ -296,5 +296,16 @@ class TicketBooking(Document):
 			file_doc.insert(ignore_permissions=True)
 	
 			return file_doc.file_url
-	
+
+	def get_movie_poster(self):
+		"""Ticket Booking has no direct Link to Movie (only movie_title,
+		a Data field fetched from Show) — resolves the poster via
+		Show.movie for use in the MTBX-19 print format."""
+		if not self.show:
+			return None
+		movie = frappe.db.get_value("Show", self.show, "movie")
+		if not movie:
+			return None
+		return frappe.db.get_value("Movie", movie, "poster")
+
 	
