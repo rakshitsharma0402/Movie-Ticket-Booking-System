@@ -24,21 +24,3 @@ class BookedSeat(Document):
 	# end: auto-generated types
 
 	_DOCTYPE_NAME = "Booked Seat"
-
-	def validate(self):
-		self.set_seat_price_default()
-
-	def set_seat_price_default(self):
-		"""seat_price defaults to the parent Ticket Booking's price_per_seat
-		when left blank, but can be overridden per row (e.g. for premium
-		seats). Not fetch_from, since that would live-mirror and overwrite
-		any manual override on every parent save."""
-		if self.seat_price:
-			return
-
-		if not self.parent:
-			return
-
-		price_per_seat = frappe.db.get_value("Ticket Booking", self.parent, "price_per_seat")
-		if price_per_seat:
-			self.seat_price = price_per_seat
