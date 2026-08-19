@@ -301,7 +301,7 @@ scheduler_events = {
 	"daily": ["movietickets.tasks.update_movie_status"],
 	"hourly": ["movietickets.tasks.update_show_status"],
 }
-
+  
 doc_events = {
 	"Ticket Booking": {
 		"after_insert": "movietickets.notification_hooks.send_booking_received_email",
@@ -311,3 +311,6 @@ doc_events = {
 		"before_save": "movietickets.notification_hooks.regenerate_movie_slug_and_status",
 	},
 }
+
+override_whitelisted_methods = {
+	"frappe.client.get_count": "movietickets.overrides.get_count_with_logging",
