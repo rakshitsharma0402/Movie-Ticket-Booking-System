@@ -6,3 +6,4 @@
 # Patches added in this section will be executed after doctypes are migrated
 movietickets.patches.v1_0.recalculate_show_seat_counts
 movietickets.patches.v1_0.set_movie_slugs
+movietickets.patches.v1_0.populate_booking_source
