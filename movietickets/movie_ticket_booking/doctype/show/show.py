@@ -131,15 +131,15 @@ class Show(Document):
 			  AND show_date = %(show_date)s
 			  AND name != %(name)s
 			  AND show_status != 'Cancelled'
-			  AND start_time < %(end_time)s
-			  AND end_time > %(start_time)s
+			  AND start_time < %(new_end_time)s
+			  AND end_time > %(new_start_time)s
 			""",
 			{
 				"screen": self.screen,
 				"show_date": self.show_date,
 				"name": self.name or "",
-				"start_time": self.end_time,
-				"end_time": self.start_time,
+				"new_start_time": self.start_time,
+				"new_end_time": self.end_time,
 			},
 			as_dict=True,
 		)
