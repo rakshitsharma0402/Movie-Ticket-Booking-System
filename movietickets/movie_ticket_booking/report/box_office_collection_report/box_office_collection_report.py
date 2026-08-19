@@ -139,7 +139,7 @@ def get_bar_chart(data):
 
 
 @frappe.whitelist()
-def get_screen_type_revenue(filters=None):
+def get_screen_type_revenue(filters: dict = None):
 	"""Data source for the pie chart (revenue by screen type). Not part
 	of execute()'s single built-in chart slot, so this is a separate
 	whitelisted call, invoked from box_office_collection_report.js after
