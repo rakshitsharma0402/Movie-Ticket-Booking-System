@@ -615,3 +615,39 @@ def get_top_5_movies_by_bookings():
 		"values": [row.booking_count for row in rows],
 	}
 
+
+@frappe.whitelist()
+def create_shows_bulk(movie, screens, date_from, date_to, show_times):
+	"""Accepts a movie, a list of screens, a date range, and a list of
+	show times, and enqueues create_shows_in_bulk (MTBX-20) as a
+	background job. Returns immediately with a job reference — actual
+	creation results arrive via a realtime event
+	('bulk_show_creation_complete') once the job finishes, since
+	creating many shows synchronously could be slow enough to time out
+	the request.
+	"""
+	if not movie:
+		frappe.throw("movie is required.")
+	if not screens:
+		frappe.throw("At least one screen must be specified.")
+	if not show_times:
+		frappe.throw("At least one show time must be specified.")
+	if not date_from or not date_to:
+		frappe.throw("date_from and date_to are required.")
+
+	frappe.enqueue(
+		"movietickets.tasks.create_shows_in_bulk",
+		queue="long",
+		movie=movie,
+		screens=screens,
+		date_from=date_from,
+		date_to=date_to,
+		show_times=show_times,
+		requesting_user=frappe.session.user,
+	)
+
+	return {
+		"success": True,
+		"message": "Bulk show creation has been queued. You'll be notified when it completes.",
+	}
+
