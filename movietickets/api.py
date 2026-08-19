@@ -496,3 +496,122 @@ def send_booking_confirmation(booking_name):
 		"success": True,
 		"message": f"Confirmation email sent to {booking.customer_email}.",
 	}
+
+
+@frappe.whitelist()
+def get_todays_occupancy_by_theater():
+	"""Bar chart data: today's occupancy % per theater, computed the
+	same way as MTBX-13 (booked seats from Confirmed bookings / total
+	Show capacity for today), grouped by theater."""
+	rows = frappe.db.sql(
+		"""
+		SELECT
+			sh.theater AS theater,
+			COALESCE(SUM(sh.total_seats), 0) AS total_capacity,
+			COALESCE(SUM(sh.booked_seats), 0) AS total_booked
+		FROM `tabShow` sh
+		WHERE sh.show_date = %(today)s
+		GROUP BY sh.theater
+		ORDER BY sh.theater
+		""",
+		{"today": frappe.utils.today()},
+		as_dict=True,
+	)
+
+	labels = []
+	values = []
+	for row in rows:
+		occupancy = round((row.total_booked / row.total_capacity) * 100, 2) if row.total_capacity else 0
+		labels.append(row.theater)
+		values.append(occupancy)
+
+	return {"labels": labels, "values": values}
+
+
+@frappe.whitelist()
+def get_revenue_trend_30_days():
+	"""Line chart data: daily revenue for the last 30 days, summed from
+	Booked Seat.seat_price (not Ticket Booking.total_amount) — same
+	reasoning as MTBX-13, since total_amount ignores per-seat premium
+	overrides."""
+	from_date = frappe.utils.add_days(frappe.utils.today(), -29)
+
+	rows = frappe.db.sql(
+		"""
+		SELECT tb.show_date AS show_date, COALESCE(SUM(bs.seat_price), 0) AS revenue
+		FROM `tabTicket Booking` tb
+		INNER JOIN `tabBooked Seat` bs ON bs.parent = tb.name
+		WHERE tb.docstatus = 1
+		  AND tb.booking_status = 'Confirmed'
+		  AND tb.show_date >= %(from_date)s
+		GROUP BY tb.show_date
+		ORDER BY tb.show_date
+		""",
+		{"from_date": from_date},
+		as_dict=True,
+	)
+
+	revenue_by_date = {str(row.show_date): row.revenue for row in rows}
+
+	labels = []
+	values = []
+	current = frappe.utils.getdate(from_date)
+	today_date = frappe.utils.getdate()
+	while current <= today_date:
+		labels.append(str(current))
+		values.append(revenue_by_date.get(str(current), 0))
+		current = frappe.utils.add_days(current, 1)
+
+	return {"labels": labels, "values": values}
+
+
+@frappe.whitelist()
+def get_bookings_by_time_slot():
+	"""Histogram data: bookings bucketed by show start_time into four
+	slots. Bucket boundaries are not spec-defined — assumption:
+	Morning 6-12, Afternoon 12-17, Evening 17-21, Night 21-6."""
+	rows = frappe.db.sql(
+		"""
+		SELECT tb.start_time AS start_time
+		FROM `tabTicket Booking` tb
+		WHERE tb.docstatus = 1 AND tb.booking_status = 'Confirmed'
+		"""
+	)
+
+	buckets = {"Morning (6-12)": 0, "Afternoon (12-17)": 0, "Evening (17-21)": 0, "Night (21-6)": 0}
+
+	for (start_time,) in rows:
+		hour = start_time.seconds // 3600 if hasattr(start_time, "seconds") else int(str(start_time).split(":")[0])
+		if 6 <= hour < 12:
+			buckets["Morning (6-12)"] += 1
+		elif 12 <= hour < 17:
+			buckets["Afternoon (12-17)"] += 1
+		elif 17 <= hour < 21:
+			buckets["Evening (17-21)"] += 1
+		else:
+			buckets["Night (21-6)"] += 1
+
+	return {"labels": list(buckets.keys()), "values": list(buckets.values())}
+
+
+@frappe.whitelist()
+def get_top_5_movies_by_bookings():
+	"""Donut chart data: top 5 movies by booking COUNT (not revenue —
+	distinct from MTBX-13's bar chart, which ranks by revenue)."""
+	rows = frappe.db.sql(
+		"""
+		SELECT movie_title, COUNT(*) AS booking_count
+		FROM `tabTicket Booking`
+		WHERE docstatus = 1 AND booking_status = 'Confirmed'
+		GROUP BY movie_title
+		ORDER BY booking_count DESC
+		LIMIT 5
+		""",
+		as_dict=True,
+	)
+
+	return {
+		"labels": [row.movie_title for row in rows],
+		"values": [row.booking_count for row in rows],
+	}
+

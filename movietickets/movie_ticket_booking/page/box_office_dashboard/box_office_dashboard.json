@@ -1,0 +1,18 @@
+{
+ "content": null,
+ "creation": "2026-08-19 10:55:35.191984",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2026-08-19 10:55:35.191984",
+ "modified_by": "Administrator",
+ "module": "Movie Ticket Booking",
+ "name": "box-office-dashboard",
+ "owner": "Administrator",
+ "page_name": "box-office-dashboard",
+ "roles": [],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0
+}
