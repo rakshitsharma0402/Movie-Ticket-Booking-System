@@ -126,78 +126,88 @@ def send_daily_revenue_digest():
 	booking_time (when tickets were purchased), not show_date (when
 	movies screen) — an assumption; the digest is framed as "what
 	happened today" for staff, distinct from MTBX-8.5's show_date-based
-	revenue reporting, which serves a different purpose."""
-	current_date = today()
+	revenue reporting, which serves a different purpose.
 
-	stats = frappe.db.sql(
+	Wrapped in try/except: this runs unattended via the scheduler, with
+	no user watching for a popup the way the Desk "Send Booking
+	Confirmation" button has one. An email failure (e.g. no outgoing
+	Email Account configured) should be logged, not raise and vanish
+	into the scheduler's own error handling with no clear trace."""
+	try:
+		current_date = today()
+
+		stats = frappe.db.sql(
+			"""
+			SELECT
+				COUNT(*) AS total_bookings,
+				COALESCE(SUM(total_amount), 0) AS total_revenue
+			FROM `tabTicket Booking`
+			WHERE docstatus = 1
+			  AND booking_status = 'Confirmed'
+			  AND DATE(booking_time) = %(today)s
+			""",
+			{"today": current_date},
+			as_dict=True,
+		)[0]
+
+		top_movie_row = frappe.db.sql(
+			"""
+			SELECT movie_title, SUM(total_amount) AS revenue
+			FROM `tabTicket Booking`
+			WHERE docstatus = 1
+			  AND booking_status = 'Confirmed'
+			  AND DATE(booking_time) = %(today)s
+			GROUP BY movie_title
+			ORDER BY revenue DESC
+			LIMIT 1
+			""",
+			{"today": current_date},
+			as_dict=True,
+		)
+		top_movie = top_movie_row[0].movie_title if top_movie_row else "N/A"
+
+		manager_emails = frappe.get_all(
+			"Has Role",
+			filters={"role": "Cinema Manager", "parenttype": "User"},
+			pluck="parent",
+		)
+		manager_emails = frappe.get_all(
+			"User",
+			filters={"name": ["in", manager_emails], "enabled": 1},
+			pluck="email",
+		)
+
+		if not manager_emails:
+			return
+
+		html_message = f"""
+		<div style="font-family: Arial, sans-serif; max-width: 600px;">
+			<h2>Daily Revenue Digest — {current_date}</h2>
+			<table style="width: 100%; border-collapse: collapse;">
+				<tr>
+					<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Total Bookings</strong></td>
+					<td style="padding: 8px; border-bottom: 1px solid #eee;">{stats.total_bookings}</td>
+				</tr>
+				<tr>
+					<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Total Revenue</strong></td>
+					<td style="padding: 8px; border-bottom: 1px solid #eee;">&#8377;{stats.total_revenue}</td>
+				</tr>
+				<tr>
+					<td style="padding: 8px;"><strong>Top Movie</strong></td>
+					<td style="padding: 8px;">{top_movie}</td>
+				</tr>
+			</table>
+		</div>
 		"""
-		SELECT
-			COUNT(*) AS total_bookings,
-			COALESCE(SUM(total_amount), 0) AS total_revenue
-		FROM `tabTicket Booking`
-		WHERE docstatus = 1
-		  AND booking_status = 'Confirmed'
-		  AND DATE(booking_time) = %(today)s
-		""",
-		{"today": current_date},
-		as_dict=True,
-	)[0]
 
-	top_movie_row = frappe.db.sql(
-		"""
-		SELECT movie_title, SUM(total_amount) AS revenue
-		FROM `tabTicket Booking`
-		WHERE docstatus = 1
-		  AND booking_status = 'Confirmed'
-		  AND DATE(booking_time) = %(today)s
-		GROUP BY movie_title
-		ORDER BY revenue DESC
-		LIMIT 1
-		""",
-		{"today": current_date},
-		as_dict=True,
-	)
-	top_movie = top_movie_row[0].movie_title if top_movie_row else "N/A"
-
-	manager_emails = frappe.get_all(
-		"Has Role",
-		filters={"role": "Cinema Manager", "parenttype": "User"},
-		pluck="parent",
-	)
-	manager_emails = frappe.get_all(
-		"User",
-		filters={"name": ["in", manager_emails], "enabled": 1},
-		pluck="email",
-	)
-
-	if not manager_emails:
-		return
-
-	html_message = f"""
-	<div style="font-family: Arial, sans-serif; max-width: 600px;">
-		<h2>Daily Revenue Digest — {current_date}</h2>
-		<table style="width: 100%; border-collapse: collapse;">
-			<tr>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Total Bookings</strong></td>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;">{stats.total_bookings}</td>
-			</tr>
-			<tr>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Total Revenue</strong></td>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;">&#8377;{stats.total_revenue}</td>
-			</tr>
-			<tr>
-				<td style="padding: 8px;"><strong>Top Movie</strong></td>
-				<td style="padding: 8px;">{top_movie}</td>
-			</tr>
-		</table>
-	</div>
-	"""
-
-	frappe.sendmail(
-		recipients=manager_emails,
-		subject=f"Daily Revenue Digest — {current_date}",
-		message=html_message,
-	)
+		frappe.sendmail(
+			recipients=manager_emails,
+			subject=f"Daily Revenue Digest — {current_date}",
+			message=html_message,
+		)
+	except Exception:
+		frappe.clear_messages()
+		frappe.log_error(frappe.get_traceback(), "send_daily_revenue_digest failed")
 
 
 def create_shows_in_bulk(movie, screens, date_from, date_to, show_times, requesting_user):

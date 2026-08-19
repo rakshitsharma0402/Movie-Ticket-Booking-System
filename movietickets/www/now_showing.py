@@ -7,6 +7,7 @@ no_cache = 1
 
 
 def get_context(context):
+	frappe.log_error("NOW-SHOWING DEBUG: get_context called", "now-showing-debug")
 	"""Guest-accessible landing page: card grid of Now Showing movies,
 	filterable by genre/language. No whitelisted API exists for this
 	specific query (MTBX-8's five APIs cover seat availability, booking,

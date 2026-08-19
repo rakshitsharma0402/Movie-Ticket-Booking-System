@@ -5,40 +5,48 @@ import frappe
 
 from movietickets.api import send_booking_confirmation
 
-
 def send_booking_received_email(doc, method):
 	"""doc_events after_insert on Ticket Booking. Sends a short "booking
-	received, complete payment" notice — distinct from the full
-	confirmation email sent on_submit (see
-	send_booking_confirmation_on_submit below, which reuses the existing
-	send_booking_confirmation API rather than duplicating its template)."""
-	config = frappe.get_cached_doc("Booking Configuration")
+	received, complete payment" notice. Wrapped in try/except: an email
+	failure (e.g. no outgoing Email Account configured) must never block
+	booking creation itself — this hook fires after the document is
+	already inserted, so a failure here should be logged, not fatal.
+	frappe.clear_messages() is needed because frappe.throw() (used
+	internally by frappe.sendmail on a missing email account) queues a
+	message for the browser BEFORE raising — catching the exception alone
+	doesn't stop that already-queued message from surfacing as an error
+	dialog, even though the save itself succeeds."""
+	try:
+		config = frappe.get_cached_doc("Booking Configuration")
 
-	html_message = f"""
-	<div style="font-family: Arial, sans-serif; max-width: 600px;">
-		<p>Hi {frappe.utils.escape_html(doc.customer_name)},</p>
-		<p>Your booking <strong>{doc.name}</strong> for
-		<strong>{frappe.utils.escape_html(doc.movie_title or "")}</strong>
-		has been received. Please complete payment within
-		<strong>{config.booking_expiry_minutes} minutes</strong> to
-		confirm your seats.</p>
-	</div>
-	"""
+		html_message = f"""
+		<div style="font-family: Arial, sans-serif; max-width: 600px;">
+			<p>Hi {frappe.utils.escape_html(doc.customer_name)},</p>
+			<p>Your booking <strong>{doc.name}</strong> for
+			<strong>{frappe.utils.escape_html(doc.movie_title or "")}</strong>
+			has been received. Please complete payment within
+			<strong>{config.booking_expiry_minutes} minutes</strong> to
+			confirm your seats.</p>
+		</div>
+		"""
 
-	frappe.sendmail(
-		recipients=[doc.customer_email],
-		subject=f"Booking Received — {doc.name}",
-		message=html_message,
-	)
+		frappe.sendmail(
+			recipients=[doc.customer_email],
+			subject=f"Booking Received — {doc.name}",
+			message=html_message,
+		)
+	except Exception:
+		frappe.clear_messages()
+		frappe.log_error(frappe.get_traceback(), "send_booking_received_email failed")
 
 
 def send_booking_confirmation_on_submit(doc, method):
-	"""doc_events on_submit on Ticket Booking. Reuses the existing
-	send_booking_confirmation whitelisted API (MTBX-8.4) rather than
-	writing a second copy of the same HTML template — same email
-	content, now triggered automatically on submit rather than only via
-	manual button click (MTBX-7.1)."""
-	send_booking_confirmation(booking_name=doc.name)
+	"""doc_events on_submit on Ticket Booking. Same rationale as above."""
+	try:
+		send_booking_confirmation(booking_name=doc.name)
+	except Exception:
+		frappe.clear_messages()
+		frappe.log_error(frappe.get_traceback(), "send_booking_confirmation_on_submit failed")
 
 
 def regenerate_movie_slug_and_status(doc, method):

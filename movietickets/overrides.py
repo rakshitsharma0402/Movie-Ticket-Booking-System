@@ -61,7 +61,7 @@ from frappe.client import get_count as _original_get_count
 
 
 @frappe.whitelist()
-def get_count_with_logging(doctype=None, filters=None, debug=False, cache=False):
+def get_count_with_logging(doctype: str = None, filters: str = None, debug: bool = False, cache: bool = False):
 	"""Logs the doctype and filters of every get_count call, then
 	delegates to Frappe's original implementation so behavior for
 	callers is unchanged."""

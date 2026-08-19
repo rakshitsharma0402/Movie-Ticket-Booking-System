@@ -52,6 +52,7 @@ class TicketBooking(Document):
 		self.validate_seat_label_format_and_bounds()
 		self.calculate_totals()
 		self.validate_seat_count_range()
+		self.set_default_seat_prices()
 
 	def on_submit(self):
 		self.booking_status = "Confirmed"
@@ -189,6 +190,23 @@ class TicketBooking(Document):
 				title="Invalid Seat Count",
 			)
 
+	def set_default_seat_prices(self):
+		"""Defaults each Booked Seat row's seat_price to this booking's
+		price_per_seat when left blank, preserving any manual per-row
+		override. Runs here, in the PARENT's validate(), rather than in
+		BookedSeat's own validate() — the child table validates before
+		the parent's fetch_from fields (price_per_seat, fetched from
+		show.ticket_price) are guaranteed to be populated, so reading
+		price_per_seat from a child row's context (whether via
+		frappe.db.get_value or self.parent_doc) was unreliable and
+		silently left seat_price at 0/None. By the time this runs, in
+		the parent's own validate(), price_per_seat is reliably set."""
+		if not self.price_per_seat:
+			return
+		for row in self.seats:
+			if not row.seat_price:
+				row.seat_price = self.price_per_seat
+
 	# ---------- lifecycle helpers ----------
 
 	def adjust_show_seat_counts(self, seats_delta):
@@ -230,72 +248,55 @@ class TicketBooking(Document):
 			update_modified=False,
 		)
 
-	def has_permission(doc, ptype="read", user=None):
-		"""Row-level restriction: a user with only the Customer role may read
-		their own bookings (booked_by == user), but not others'. Cinema
-		Manager and Box Office Staff are unrestricted here — their DocType-
-		level permission rules (full/staff CRUD) already grant broader
-		access, and this function only needs to narrow things further for
-		Customer, not re-grant what those roles already have."""
-		user = user or frappe.session.user
-
-		if "Cinema Manager" in frappe.get_roles(user) or "Box Office Staff" in frappe.get_roles(user):
-			return True
-
-		if "Customer" in frappe.get_roles(user):
-			return doc.booked_by == user
-
-		return True
-
 	def get_or_create_qr_code(self):
-			"""Generates a QR code encoding this booking's details and
-			attaches it to the record, if not already attached. Returns the
-			file_url of the attachment. Called lazily from
-			send_booking_confirmation (MTBX-8.4) so the QR is generated once,
-			on first request, rather than needing separate generation logic
-			wired into every place a confirmation email might be triggered
-			(on_submit doc_event, manual button, etc.)."""
-			existing = frappe.db.get_value(
-				"File",
-				{"attached_to_doctype": "Ticket Booking", "attached_to_name": self.name, "file_name": ["like", "qr_%"]},
-				"file_url",
-			)
-			if existing:
-				return existing
-	
-			import io
-	
-			import qrcode
-	
-			seat_labels = ", ".join(row.seat_label for row in self.seats)
-			qr_content = (
-				f"Booking ID: {self.name}\n"
-				f"Movie: {self.movie_title}\n"
-				f"Theater: {self.theater}\n"
-				f"Screen: {self.screen}\n"
-				f"Show: {self.show_date} {self.start_time}\n"
-				f"Seats: {seat_labels}\n"
-				f"Amount: {self.total_amount}"
-			)
-	
-			img = qrcode.make(qr_content)
-			buffer = io.BytesIO()
-			img.save(buffer, format="PNG")
-			buffer.seek(0)
-	
-			file_doc = frappe.get_doc(
-				{
-					"doctype": "File",
-					"file_name": f"qr_{self.name}.png",
-					"attached_to_doctype": "Ticket Booking",
-					"attached_to_name": self.name,
-					"content": buffer.read(),
-					"is_private": 0,
-				}
-			)
-			file_doc.insert(ignore_permissions=True)
-	
-			return file_doc.file_url
+		"""Generates a QR code encoding this booking's details and
+		attaches it to the record, if not already attached. Returns the
+		file_url of the attachment. Called lazily from
+		send_booking_confirmation (MTBX-8.4) so the QR is generated once,
+		on first request, rather than needing separate generation logic
+		wired into every place a confirmation email might be triggered
+		(on_submit doc_event, manual button, etc.)."""
+		existing = frappe.db.get_value(
+			"File",
+			{"attached_to_doctype": "Ticket Booking", "attached_to_name": self.name, "file_name": ["like", "qr_%"]},
+			"file_url",
+		)
+		if existing:
+			return existing
+
+		import io
+
+		import qrcode
+
+		seat_labels = ", ".join(row.seat_label for row in self.seats)
+		qr_content = (
+			f"Booking ID: {self.name}\n"
+			f"Movie: {self.movie_title}\n"
+			f"Theater: {self.theater}\n"
+			f"Screen: {self.screen}\n"
+			f"Show: {self.show_date} {self.start_time}\n"
+			f"Seats: {seat_labels}\n"
+			f"Amount: {self.total_amount}"
+		)
+
+		img = qrcode.make(qr_content)
+		buffer = io.BytesIO()
+		img.save(buffer, format="PNG")
+		buffer.seek(0)
+
+		file_doc = frappe.get_doc(
+			{
+				"doctype": "File",
+				"file_name": f"qr_{self.name}.png",
+				"attached_to_doctype": "Ticket Booking",
+				"attached_to_name": self.name,
+				"content": buffer.read(),
+				"is_private": 0,
+			}
+		)
+		file_doc.insert(ignore_permissions=True)
+
+		return file_doc.file_url
 
 	def get_movie_poster(self):
 		"""Ticket Booking has no direct Link to Movie (only movie_title,
@@ -308,4 +309,20 @@ class TicketBooking(Document):
 			return None
 		return frappe.db.get_value("Movie", movie, "poster")
 
-	
+
+def has_permission(doc, ptype="read", user=None):
+	"""Row-level restriction: a user with only the Customer role may read
+	their own bookings (booked_by == user), but not others'. Cinema
+	Manager and Box Office Staff are unrestricted here — their DocType-
+	level permission rules (full/staff CRUD) already grant broader
+	access, and this function only needs to narrow things further for
+	Customer, not re-grant what those roles already have."""
+	user = user or frappe.session.user
+
+	if "Cinema Manager" in frappe.get_roles(user) or "Box Office Staff" in frappe.get_roles(user):
+		return True
+
+	if "Customer" in frappe.get_roles(user):
+		return doc.booked_by == user
+
+	return True
