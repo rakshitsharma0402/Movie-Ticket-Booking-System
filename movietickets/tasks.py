@@ -199,4 +199,68 @@ def send_daily_revenue_digest():
 		message=html_message,
 	)
 
+
+def create_shows_in_bulk(movie, screens, date_from, date_to, show_times, requesting_user):
+	"""MTBX-20 — runs inside a background worker via frappe.enqueue.
+
+	Creates one Show per (screen, date, time) combination across the
+	given date range. Each Show is created via the normal
+	frappe.get_doc({...}).insert() path, which means it automatically
+	re-runs the full Show controller — including
+	validate_no_overlap() (MTBX-4.1) — for every single row. This
+	function does NOT duplicate that conflict-check logic; it relies
+	entirely on the existing controller to reject conflicting shows,
+	same as any other Show creation path in this app.
+
+	Continues past individual failures (e.g. one screen/date/time
+	combination overlaps an existing show) rather than aborting the
+	whole batch, and reports a per-attempt result via
+	frappe.publish_realtime so the browser-side dialog can show a
+	summary once the job completes."""
+	from frappe.utils import add_days, getdate
+
+	screens = frappe.parse_json(screens) if isinstance(screens, str) else screens
+	show_times = frappe.parse_json(show_times) if isinstance(show_times, str) else show_times
+
+	created = []
+	failed = []
+
+	current_date = getdate(date_from)
+	end_date = getdate(date_to)
+
+	while current_date <= end_date:
+		for screen in screens:
+			for show_time in show_times:
+				try:
+					show = frappe.get_doc(
+						{
+							"doctype": "Show",
+							"naming_series": "SHW-.YYYY.-.#####",
+							"movie": movie,
+							"screen": screen,
+							"show_date": current_date,
+							"start_time": show_time,
+						}
+					)
+					show.insert(ignore_permissions=True)
+					created.append(show.name)
+				except frappe.ValidationError as e:
+					failed.append(
+						{
+							"screen": screen,
+							"date": str(current_date),
+							"time": show_time,
+							"reason": str(e),
+						}
+					)
+		current_date = add_days(current_date, 1)
+
+	frappe.db.commit()
+
+	frappe.publish_realtime(
+		event="bulk_show_creation_complete",
+		message={"created": created, "failed": failed},
+		user=requesting_user,
+	)
+
 	
