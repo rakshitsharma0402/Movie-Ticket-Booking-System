@@ -20,9 +20,9 @@ def execute():
 				"""
 				SELECT COALESCE(SUM(number_of_seats), 0) AS total
 				FROM `tabTicket Booking`
-				WHERE show = %(show)s
-				  AND docstatus = 1
-				  AND booking_status = 'Confirmed'
+				WHERE `show` = %(show)s
+  					AND docstatus = 1
+  					AND booking_status = 'Confirmed'
 				""",
 				{"show": show.name},
 				as_dict=True,

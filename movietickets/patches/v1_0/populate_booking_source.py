@@ -13,8 +13,8 @@ def execute():
 	frappe.db.sql(
 		"""
 		UPDATE `tabTicket Booking`
-		SET booking_source = 'Counter'
-		WHERE booking_source IS NULL OR booking_source = ''
+		SET custom_booking_source = 'Counter'
+		WHERE custom_booking_source IS NULL OR custom_booking_source = ''
 		"""
 	)
 	frappe.db.commit()
