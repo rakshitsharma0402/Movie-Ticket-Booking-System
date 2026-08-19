@@ -407,3 +407,92 @@ def get_revenue_summary(theater=None, from_date=None, to_date=None):
 		"top_movie": top_movie,
 	}
 
+
+@frappe.whitelist()
+def send_booking_confirmation(booking_name):
+	"""Sends a formatted HTML confirmation email to the customer for a
+	given Ticket Booking. Requires an authenticated session
+	(allow_guest defaults to False).
+
+	As of MTBX-17, also generates (if not already present) and embeds
+	a QR code encoding the booking's details, via
+	TicketBooking.get_or_create_qr_code() — reused here rather than
+	duplicated, so both the on_submit doc_event (MTBX-12.1) and the
+	manual "Send Booking Confirmation" button (MTBX-7.1) automatically
+	pick up the QR without separate wiring.
+
+	Returns:
+		{"success": True, "message": "Confirmation email sent to
+		 <email>."}
+	"""
+	if not booking_name:
+		frappe.throw("booking_name is required.")
+
+	booking = frappe.get_doc("Ticket Booking", booking_name)
+
+	seat_labels = ", ".join(row.seat_label for row in booking.seats)
+	qr_file_url = booking.get_or_create_qr_code()
+
+	html_message = f"""
+	<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+		<h2 style="color: #1a1a1a;">Booking Confirmed 🎬</h2>
+		<p>Hi {frappe.utils.escape_html(booking.customer_name)},</p>
+		<p>Your ticket booking is confirmed. Here are your details:</p>
+		<table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
+			<tr>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Booking ID</strong></td>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;">{booking.name}</td>
+			</tr>
+			<tr>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Movie</strong></td>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;">{frappe.utils.escape_html(booking.movie_title or "")}</td>
+			</tr>
+			<tr>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Theater</strong></td>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;">{frappe.utils.escape_html(booking.theater or "")}</td>
+			</tr>
+			<tr>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Screen</strong></td>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;">{frappe.utils.escape_html(booking.screen or "")}</td>
+			</tr>
+			<tr>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Show Time</strong></td>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;">{booking.show_date} at {booking.start_time}</td>
+			</tr>
+			<tr>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Seats</strong></td>
+				<td style="padding: 8px; border-bottom: 1px solid #eee;">{seat_labels}</td>
+			</tr>
+			<tr>
+				<td style="padding: 8px;"><strong>Total Amount</strong></td>
+				<td style="padding: 8px;">₹{booking.total_amount}</td>
+			</tr>
+		</table>
+		<div style="text-align: center; margin: 20px 0;">
+			<img src="cid:booking_qr" alt="Booking QR Code" style="width:180px;height:180px;">
+			<p style="color: #666; font-size: 12px;">Show this code at the counter.</p>
+		</div>
+		<p style="color: #666; font-size: 13px;">Please arrive at least 15 minutes before showtime.</p>
+	</div>
+	"""
+
+	qr_file_doc = frappe.db.get_value("File", {"file_url": qr_file_url}, ["name"], as_dict=True)
+	qr_file_content = frappe.get_doc("File", qr_file_doc.name).get_content()
+
+	frappe.sendmail(
+		recipients=[booking.customer_email],
+		subject=f"Booking Confirmed — {booking.movie_title} ({booking.name})",
+		message=html_message,
+		attachments=[
+			{
+				"fname": f"qr_{booking.name}.png",
+				"fcontent": qr_file_content,
+			}
+		],
+		inline_images=[{"filename": f"qr_{booking.name}.png", "cid": "booking_qr", "content": qr_file_content}],
+	)
+
+	return {
+		"success": True,
+		"message": f"Confirmation email sent to {booking.customer_email}.",
+	}
