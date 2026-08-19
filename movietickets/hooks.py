@@ -314,3 +314,8 @@ doc_events = {
 
 override_whitelisted_methods = {
 	"frappe.client.get_count": "movietickets.overrides.get_count_with_logging",
+}
+
+app_include_css = "/assets/movietickets/css/cinema.css"
+app_include_js = "/assets/movietickets/js/cinema.js"
+

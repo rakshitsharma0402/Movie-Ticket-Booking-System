@@ -1,0 +1,44 @@
+/* Copyright (c) 2026, Rakshit Sharma and contributors */
+
+/* Booking status badge colors — matches the palette used in
+   my-bookings.html (MTBX-10.3) and Show list view indicators
+   (MTBX-7.4), kept here as reusable classes for any Desk/portal
+   surface that wants consistent badge styling. */
+
+.booking-status-badge {
+	display: inline-block;
+	padding: 2px 10px;
+	border-radius: 12px;
+	font-size: 12px;
+	font-weight: 600;
+	color: #fff;
+}
+.booking-status-badge.status-pending { background-color: #17a2b8; }
+.booking-status-badge.status-confirmed { background-color: #28a745; }
+.booking-status-badge.status-cancelled { background-color: #dc3545; }
+.booking-status-badge.status-expired { background-color: #6c757d; }
+
+/* "Houseful" (fully booked / 0 available seats) pulsing indicator */
+.houseful-indicator {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background-color: #dc3545;
+	animation: houseful-pulse 1.5s infinite;
+}
+@keyframes houseful-pulse {
+	0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.6); }
+	70% { box-shadow: 0 0 0 8px rgba(220, 53, 69, 0); }
+	100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+}
+
+/* Seat availability color coding — matches the seat-grid dialog
+   colors already used inline in ticket_booking.js (MTBX-7.1);
+   defined here as reusable classes in case other surfaces (e.g. a
+   future portal seat picker) want the same palette without
+   duplicating inline styles. */
+.seat-available { background-color: #28a745; color: #fff; }
+.seat-booked { background-color: #dc3545; color: #fff; cursor: not-allowed; }
+.seat-selected { background-color: #007bff; color: #fff; }
+
