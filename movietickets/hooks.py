@@ -302,3 +302,6 @@ scheduler_events = {
 	"hourly": ["movietickets.tasks.update_show_status"],
 }
 
+override_whitelisted_methods = {
+	"frappe.client.get_count": "movietickets.overrides.get_count_with_logging",
+}
