@@ -302,3 +302,12 @@ scheduler_events = {
 	"hourly": ["movietickets.tasks.update_show_status"],
 }
 
+doc_events = {
+	"Ticket Booking": {
+		"after_insert": "movietickets.notification_hooks.send_booking_received_email",
+		"on_submit": "movietickets.notification_hooks.send_booking_confirmation_on_submit",
+	},
+	"Movie": {
+		"before_save": "movietickets.notification_hooks.regenerate_movie_slug_and_status",
+	},
+}
