@@ -128,9 +128,17 @@ function render_seat_dialog(frm, seat_data) {
 						seat.status === "booked" && !my_existing_seats.has(seat.seat_label);
 					const is_selected = selected.has(seat.seat_label);
 
-					let bg = "#28a745"; // available, unselected
-					if (is_booked_by_other) bg = "#dc3545"; // booked by someone else
-					else if (is_selected) bg = "#007bff"; // currently selected
+					// Colors per MTBX-16 spec: green=available, red=booked,
+					// yellow=selected. Text color switches to dark for the
+					// selected state, since white-on-yellow is low contrast.
+					let bg = "#28a745";
+					let text_color = "white";
+					if (is_booked_by_other) {
+						bg = "#dc3545";
+					} else if (is_selected) {
+						bg = "#ffc107";
+						text_color = "#1a1a1a";
+					}
 
 					html += `
 						<button
@@ -139,7 +147,7 @@ function render_seat_dialog(frm, seat_data) {
 							data-seat="${seat.seat_label}"
 							${is_booked_by_other ? "disabled" : ""}
 							style="width:28px;height:28px;font-size:10px;border:none;border-radius:4px;
-								color:white;background:${bg};
+								color:${text_color};background:${bg};
 								cursor:${is_booked_by_other ? "not-allowed" : "pointer"};"
 							title="${seat.seat_label}"
 						>${seat.seat_number}</button>
@@ -151,7 +159,7 @@ function render_seat_dialog(frm, seat_data) {
 		html += `</div>
 			<div style="margin-top:10px; font-size:12px;">
 				<span style="color:#28a745;">\u25A0</span> Available &nbsp;
-				<span style="color:#007bff;">\u25A0</span> Selected &nbsp;
+				<span style="color:#ffc107;">\u25A0</span> Selected &nbsp;
 				<span style="color:#dc3545;">\u25A0</span> Booked
 			</div>`;
 
