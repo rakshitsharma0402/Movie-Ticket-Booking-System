@@ -7,7 +7,7 @@ import json
 from movietickets.movie_ticket_booking.doctype.ticket_booking.ticket_booking import SEAT_LABEL_PATTERN
 
 @frappe.whitelist()
-def get_seat_availability(show_name):
+def get_seat_availability(show_name: str):
 	"""Returns a 2D seat-grid representation for a Show, for the seat-
 	selection dialog on Ticket Booking (MTBX-7.1).
 
@@ -84,7 +84,7 @@ def get_seat_availability(show_name):
 
 
 @frappe.whitelist(allow_guest=False)
-def create_booking(show, customer_name, customer_email, customer_phone, seats):
+def create_booking(show: str, customer_name: str, customer_email: str, customer_phone: str, seats: str):
 	"""Creates a Ticket Booking with race-condition-safe seat re-validation.
 
 	seats: list of seat_label strings (e.g. ["A-5", "A-6"]), or a JSON-
@@ -166,7 +166,7 @@ def create_booking(show, customer_name, customer_email, customer_phone, seats):
 
 
 @frappe.whitelist(allow_guest=True)
-def get_shows_for_movie(movie, city=None, date=None):
+def get_shows_for_movie(movie: str, city: str = None, date: str = None):
 	"""Returns upcoming Shows for a given Movie, for the public portal.
 	Guest-accessible — no session required.
 
@@ -236,82 +236,7 @@ def get_shows_for_movie(movie, city=None, date=None):
 
 
 @frappe.whitelist()
-def send_booking_confirmation(booking_name):
-	"""Sends a formatted HTML confirmation email to the customer for a
-	given Ticket Booking. Requires an authenticated session
-	(allow_guest defaults to False).
-
-	Pulls movie/theater/screen/show_date/start_time directly from the
-	booking's own fetched fields (set via fetch_from in MTBX-3.1), and
-	seat labels from the booking's Seats child table. Queues the email
-	via frappe.sendmail() — actual delivery depends on an outgoing email
-	account being configured on the site; a successful call here means
-	the email was queued, not necessarily delivered.
-
-	Returns:
-		{"success": True, "message": "Confirmation email sent to
-		 <email>."}
-	"""
-	if not booking_name:
-		frappe.throw("booking_name is required.")
-
-	booking = frappe.get_doc("Ticket Booking", booking_name)
-
-	seat_labels = ", ".join(row.seat_label for row in booking.seats)
-
-	html_message = f"""
-	<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-		<h2 style="color: #1a1a1a;">Booking Confirmed 🎬</h2>
-		<p>Hi {frappe.utils.escape_html(booking.customer_name)},</p>
-		<p>Your ticket booking is confirmed. Here are your details:</p>
-		<table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
-			<tr>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Booking ID</strong></td>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;">{booking.name}</td>
-			</tr>
-			<tr>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Movie</strong></td>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;">{frappe.utils.escape_html(booking.movie_title or "")}</td>
-			</tr>
-			<tr>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Theater</strong></td>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;">{frappe.utils.escape_html(booking.theater or "")}</td>
-			</tr>
-			<tr>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Screen</strong></td>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;">{frappe.utils.escape_html(booking.screen or "")}</td>
-			</tr>
-			<tr>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Show Time</strong></td>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;">{booking.show_date} at {booking.start_time}</td>
-			</tr>
-			<tr>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Seats</strong></td>
-				<td style="padding: 8px; border-bottom: 1px solid #eee;">{seat_labels}</td>
-			</tr>
-			<tr>
-				<td style="padding: 8px;"><strong>Total Amount</strong></td>
-				<td style="padding: 8px;">₹{booking.total_amount}</td>
-			</tr>
-		</table>
-		<p style="color: #666; font-size: 13px;">Please arrive at least 15 minutes before showtime.</p>
-	</div>
-	"""
-
-	frappe.sendmail(
-		recipients=[booking.customer_email],
-		subject=f"Booking Confirmed — {booking.movie_title} ({booking.name})",
-		message=html_message,
-	)
-
-	return {
-		"success": True,
-		"message": f"Confirmation email sent to {booking.customer_email}.",
-	}
-
-
-@frappe.whitelist()
-def get_revenue_summary(theater=None, from_date=None, to_date=None):
+def get_revenue_summary(theater: str = None, from_date: str = None, to_date: str = None):
 	"""Aggregate revenue/occupancy report, optionally filtered by theater
 	and/or show date range. Requires an authenticated session.
 
@@ -409,17 +334,17 @@ def get_revenue_summary(theater=None, from_date=None, to_date=None):
 
 
 @frappe.whitelist()
-def send_booking_confirmation(booking_name):
+def send_booking_confirmation(booking_name: str):
 	"""Sends a formatted HTML confirmation email to the customer for a
 	given Ticket Booking. Requires an authenticated session
 	(allow_guest defaults to False).
 
-	As of MTBX-17, also generates (if not already present) and embeds
-	a QR code encoding the booking's details, via
-	TicketBooking.get_or_create_qr_code() — reused here rather than
-	duplicated, so both the on_submit doc_event (MTBX-12.1) and the
-	manual "Send Booking Confirmation" button (MTBX-7.1) automatically
-	pick up the QR without separate wiring.
+	Generates (if not already present) and embeds a QR code encoding
+	the booking's details, via TicketBooking.get_or_create_qr_code()
+	(MTBX-17) — reused here rather than duplicated, so both the
+	on_submit doc_event (MTBX-12.1) and the manual "Send Booking
+	Confirmation" button (MTBX-7.1) automatically pick up the QR
+	without separate wiring.
 
 	Returns:
 		{"success": True, "message": "Confirmation email sent to
@@ -617,7 +542,7 @@ def get_top_5_movies_by_bookings():
 
 
 @frappe.whitelist()
-def create_shows_bulk(movie, screens, date_from, date_to, show_times):
+def create_shows_bulk(movie: str, screens: str, date_from: str, date_to: str, show_times: str):
 	"""Accepts a movie, a list of screens, a date range, and a list of
 	show times, and enqueues create_shows_in_bulk (MTBX-20) as a
 	background job. Returns immediately with a job reference — actual
