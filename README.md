@@ -189,3 +189,31 @@ All 9 pass. Note: `bench run-tests` (without `--app`) fails in this environment 
 - **Box Office Dashboard** — see above.
 - **Movie Ticket print format** — dark cinema-themed Jinja print format with poster, QR code, and full booking detail. Requires Box Office Staff to have `Print Format` read access (see Roles & Permissions) — this was missing and blocking printing entirely until fixed during a live staff-side demo run.
 - **Bulk show creator** — dialog + background job (`frappe.enqueue`) to create shows across multiple screens/dates/times in one action, respecting existing conflict validation by reusing `Show.insert()`'s normal controller path (no duplicated validation logic).
+
+---
+
+## Assumptions
+
+The spec was silent on a number of details; these are the choices made, so they're explicit rather than buried in code comments:
+
+- **"Upcoming shows"** (`get_shows_for_movie`) means `show_date >= today` and `show_status` in `Scheduled`/`Now Playing` — same-day shows whose `start_time` has already passed are still included, not filtered out.
+- **`city` filtering** joins to the Theater's actual `city` field rather than substring-matching Show's denormalized `theater` string.
+- **`movie` parameters** across the API expect the Movie **docname** (`MOV-00001`), not its title.
+- **Revenue scope**: only `docstatus=1, booking_status='Confirmed'` bookings count as revenue anywhere in the app (reports, dashboard, digest) — Pending/Cancelled/Expired are excluded throughout.
+- **Daily revenue digest "today"** is scoped to `booking_time` (when the ticket was purchased), not `show_date` (when the movie screens) — deliberately different from the Report/`get_revenue_summary`, which scope by `show_date`, since a digest for staff is framed as "what happened today," not "revenue for shows today."
+- **Time-slot histogram buckets** (Morning 6–12 / Afternoon 12–17 / Evening 17–21 / Night 21–6) are arbitrary, not spec-defined.
+- **Screen cancellation cascade**: an organization-cancelled Show only cascades to Pending/Confirmed bookings; Cancelled/Expired bookings are left untouched.
+- **Overlap validation** excludes Cancelled shows from the conflict check — a cancelled slot doesn't block a new booking on that screen/time.
+- **26-row cap**: seat labeling (A–Z) assumes no Screen ever has more than 26 rows; both `get_seat_availability` and the booking validator throw explicitly rather than silently corrupting labels past Z.
+- **"Book seats via portal only"** (Customer role) is enforced by giving Customer no Desk Access at all, not by any request-origin check — a Customer with Desk access (if one were ever granted) could otherwise create bookings from the Desk too.
+
+---
+
+## Known Gaps & Follow-Ups
+
+- `Ticket Booking.total_amount` doesn't reflect per-seat `seat_price` overrides — the Report/Dashboard already work around this by summing `seat_price` directly; `total_amount` itself is unfixed.
+- `has_permission` on Ticket Booking doesn't actually restrict `get_list`/`get_doc` access — only `/my-bookings`' own explicit filter enforces row-level privacy today. A `permission_query_conditions` hook is the likely fix.
+- `get_seat_availability` doesn't exclude the current booking's own already-saved seats from its "booked" query — handled client-side in both the Desk dialog and `/book-seats`, but arguably belongs at the API level.
+- `Show.compute_end_time` and the hourly status-update job don't account for shows whose `end_time` wraps past midnight.
+- No migration patch exists to correct `Theater.total_screens` drift from pre-fix Screen deletions, or to backfill `Ticket Booking`/`Booked Seat` financial fields the way `recalculate_show_seat_counts` does for Show — both classes of drift were found and manually repaired during the regression pass, but no automated patch exists for either.
+- Any new whitelisted API function must be smoke-tested via a real browser/HTTP request before being trusted — console-level `frappe.call()` testing has repeatedly given false "it works" results on type-annotation issues in this Frappe version.
