@@ -542,7 +542,7 @@ def get_top_5_movies_by_bookings():
 
 
 @frappe.whitelist()
-def create_shows_bulk(movie: str, screens: str, date_from: str, date_to: str, show_times: str):
+def create_shows_bulk(movie: str, screens: list, date_from: str, date_to: str, show_times: list):
 	"""Accepts a movie, a list of screens, a date range, and a list of
 	show times, and enqueues create_shows_in_bulk (MTBX-20) as a
 	background job. Returns immediately with a job reference — actual

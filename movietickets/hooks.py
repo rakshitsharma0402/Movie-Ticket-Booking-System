@@ -33,6 +33,11 @@ fixtures = [
 		"dt": "Property Setter",
 		"filters": [["doc_type", "=", "Show"]],
 	},
+    {
+		"dt": "Custom DocPerm",
+		"filters": [["role", "=", "Box Office Staff"], ["parent", "=", "Print Format"]],
+	},
+
 ]
 
 # Permissions
