@@ -14,7 +14,7 @@ A Frappe app for browsing movies, scheduling shows, and booking tickets — buil
 ```bash
 bench init cinema-bench --frappe-branch version-16
 bench new-site cinema.localhost
-bench new-app movietickets
+bench get-app git@github.com:rakshitsharma0402/Movie-Ticket-Booking-System.git
 bench --site cinema.localhost install-app movietickets
 bench use cinema.localhost
 bench start
